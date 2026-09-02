@@ -1,0 +1,35 @@
+# Dependencies and package-manager caches
+node_modules/
+.pnpm-store/
+
+# Operating-system and editor files
+.DS_Store
+*.swp
+*.swo
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local DSH state and runtime output
+.dsh/
+*.log
+/tmp-test-*
+test/.fixtures-cache/
+
+# Internal orchestration, reports, audits, and developer-only material
+.orchestra/
+orchestra/
+docs/
+DESIGN.md
+MANUAL.md
+SPEC.md
+ORCHESTRA_PROPOSAL_*.md
+bin/
+e2e/
+frontend/

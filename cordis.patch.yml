@@ -1,0 +1,96 @@
+# DSH Trinity bundle patch.
+#
+# (1) Pin ctx.web.searchProvider to 'web-access-chain-search' so model calls
+#     to web_search always land on the new namespaced provider. The namespaced
+#     ID is a defensive choice (SPEC §II.9): even if a user forgets to
+#     uninstall v1.0, no duplicate provider is registered because the IDs
+#     differ. Standard upgrade is uninstall v1.0 → install v2.2.
+# (2) Pin ctx.web.fetchProvider to 'web-access-chain-fetch'.
+# (3) Disable the DSH default web-search-deepseek bundle so it does not
+#     register a second usable candidate that would make web seam ambiguous.
+# (4) Insert a host row that points at this bundle's own package, so the
+#     loader imports lib/index.js and runs apply(ctx, config), which is the
+#     only place that calls ctx.web.registerSearchProvider +
+#     ctx.web.registerFetchProvider + ctx.tools.register.
+# (5) Alpha 4: undo dsh-web-app's `tool-web: disabled: true`. dsh-base now
+#     ships tool-web with `fetch: true` by default (alpha.4 A4-06), but
+#     dsh-web-app disables the whole row in its own patch layer, so on
+#     any profile that mounts dsh-web-app the model-facing web_fetch /
+#     web_search tool disappears. This row re-enables it. Do NOT restate
+#     `config.fetch: true` here — the alpha.4 base default covers it.
+#
+# v2.2: credential refs are DSH env-name refs (EXA_API_KEY / …) — manage
+# with `/webdoctor-keys set <provider> <key>`; settings namespace is
+# `web-access-chain`.
+- id: web
+  config:
+    searchProvider: web-access-chain-search
+    fetchProvider:  web-access-chain-fetch
+
+- id: web-search-deepseek
+  disabled: true
+
+- id: tool-web
+  disabled: false
+
+- insert:
+  - id: web-access-chain
+    name: dsh-trinity
+    config:
+      # ── Routing (Tool-level overrides exist; this is the global default) ──
+      routing: auto
+
+      # ── Runtime budgets (SPEC §I.9) ──
+      searchTotalTimeoutMs: 30000
+      perProviderTimeoutMs: 8000
+      perKeyTimeoutMs: 8000
+      maxProvidersPerSearch: 18
+      maxKeysPerProvider: 3
+      aggregateMaxFanout: 4
+
+      # ── Cache (SPEC §II.3.4) ──
+      cacheTtlMs: 3600000
+      cacheMaxEntries: 128
+      cacheMaxBytes: 134217728
+
+      # ── Fetch policy (SPEC §II.4) ──
+      fetchRoutingMode: http-only
+      fetchMaxResponseMB: 5
+      ssrf:
+        allowRanges: []
+        trustEnvProxy: false
+      proxy: null
+      domainPolicy:
+        allow: []
+        deny: []
+
+      # ── Authenticated fetch profiles (bound to allowlisted Origins) ──
+      authFetch: {}
+
+      # ── Adapter gates (whether the adapter exists inside safeFetch) ──
+      adapters:
+        github: { enabled: true }
+        youtube: { enabled: true }
+        rss: { enabled: true }
+        pdf: { enabled: true }
+        genericHtml: { enabled: true }
+
+      # ── Tool gates (whether the standalone Tool is registered) ──
+      # Distinct from adapter gates. Adapter on + tool off = the capability
+      # exists inside web_fetch but no dedicated Tool card. All specialised
+      # tools default to OFF until Commit 3 wires the cheap variants.
+      tools:
+        githubPrIssue: { enabled: false }
+        videoExtract: { enabled: false }
+        pdfExtract: { enabled: false, maxPages: null, provider: "unpdf" }
+
+      # ── source_check (SPEC §II.5) ──
+      sourceCheck:
+        enabled: true
+        subQueryCount: 3
+        maxPagesFetch: 5
+        topPassagesPerSource: 3
+        # assessmentModel falls back to ctx.agentDefaultModel when unset
+
+      # ── mmx fallback (v1 carry-over; preserved for R1 stability) ──
+      mmxFallback: true

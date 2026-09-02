@@ -1,0 +1,65 @@
+{
+  "name": "dsh-trinity",
+  "version": "2.2.2",
+  "description": "Multi-provider web search, fetch, source checking, and provider operations for DeepSeek Harness.",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js test/integration/*.test.js test/credentials/*.test.js test/cache/*.test.js test/source-check/*.test.js test/commands/*.test.js test/skills/*.test.js test/adapters/*.test.js test/contract/*.test.js test/providers/fetch/*.test.js",
+    "sync-bundle": "node bin/sync-bundle.js",
+    "sync-bundle:check": "node bin/sync-bundle.js --check",
+    "lint:no-llm-in-providers": "node bin/lint-no-llm-in-providers.js"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "web-access",
+    "web-search",
+    "web-fetch",
+    "credential-pool",
+    "exa",
+    "anysearch",
+    "minimax",
+    "ssrf",
+    "readability",
+    "rsc",
+    "source-check"
+  ],
+  "author": "DSH Trinity Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TimYuann/dsh-trinity.git"
+  },
+  "homepage": "https://github.com/TimYuann/dsh-trinity#readme",
+  "bugs": {
+    "url": "https://github.com/TimYuann/dsh-trinity/issues"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1-rc.1",
+    "@google/generative-ai": "^0.21.0",
+    "@mozilla/readability": "^0.5.0",
+    "defuddle": "^0.6.0",
+    "google-auth-library": "^9.14.0",
+    "jsdom": "^24.0.0",
+    "linkedom": "^0.18.0",
+    "p-limit": "^6.1.0",
+    "turndown": "^7.2.0",
+    "unpdf": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
