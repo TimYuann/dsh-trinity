@@ -42,7 +42,7 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ```bash
 # 安装到 web profile；也可将 web 替换为 dev 等独立 profile
-dsh plugin --profile web add dsh-trinity@2.2.2
+dsh plugin --profile web add dsh-trinity@2.2.3
 
 # 重启该 profile 的 DSH Web host
 dsh web --port 4599
@@ -68,6 +68,27 @@ dsh --profile dev --port 4600
 
 插件使用 DSH 原生 `ctx.credentials` credential store，不创建插件私有 `.env` 文件。
 
+### Web UI 设置页（推荐）
+
+DSH Trinity 在 DSH Web UI 设置面板的导航条中暴露 **"Provider 密钥"** 分区（`order: 25`，位于通用设置 / 模型 / 插件 / Agent 预设之后）。在该分区可对所有受支持的 Provider（Exa、AnySearch、Gemini、Brave、Tavily 等共 27 个）进行：
+
+- **Save** —— 在 password input 输入 key 后直接调用 `ctx.credentials.set(ref, value)`；提交后输入框立即清空，状态行短暂显示"已保存（末四位：1234）"作为本次回执。
+- **Test** —— 仅调用 `ctx.credentials.describe(ref)`，不向任何外部 Provider 发送请求，不产生费用。
+- **Clear** —— 二次确认后调用 `ctx.credentials.unset(ref)`，刷新状态。
+
+安全约束：
+
+- 完整 key 永远不进入 chat composer、session log、host log、settings.yaml、模型 prompt、tool argument、console log 或 telemetry payload。
+- `last4` 是在用户点击 Save 的瞬间**在浏览器**根据用户输入计算出的，**仅在 React 组件 state 中短暂存在**，刷新页面、关闭弹窗或 context 停止后即被丢弃；host 永远不返回完整 key，也永远不在 `describe` 响应中回显后四位。
+- 设置页的 `web-access-chain` settings YAML **只管理非敏感配置**（routing、timeout、Provider 开关、fetch policy 等），不包含任何 Provider key。
+- 跨域、未认证或非 loopback 访问均被 DSH 自身 trusted-host fence 拒绝；本插件不引入新 HTTP 路由。
+
+**禁止在聊天框粘贴 key。** 聊天路径会把消息内容写入 session JSONL，DSH Trinity 与 DSH 都无法清理。始终使用 Web UI 设置页或 `/webdoctor-keys` 命令。
+
+### 命令行 fallback：`/webdoctor-keys`
+
+在不支持派发插件 command 的宿主（例如纯 headless / 终端）上，可使用 `/webdoctor-keys` 命令完成同样的操作。命令不会回显完整 key；`set` 只显示后四位指纹。
+
 ```text
 /webdoctor-keys status
 /webdoctor-keys set exa <KEY>
@@ -78,15 +99,13 @@ dsh --profile dev --port 4600
 /webdoctor-keys clear gemini
 ```
 
-命令不会回显完整 Key；`set` 只显示后四位指纹。
-
-Key 的解析优先级为：
+### Key 解析优先级
 
 ```text
 进程环境变量 > DSH credential store > DSH .env 文件
 ```
 
-因此，面向可重复部署的 Profile，建议通过 `/webdoctor-keys set` 写入 DSH credential store，而不是依赖其他 Agent skill 注入的环境变量。
+因此，面向可重复部署的 Profile，建议通过 Web UI 设置页或 `/webdoctor-keys set` 写入 DSH credential store，而不是依赖其他 Agent skill 注入的环境变量。
 
 ## 调用示例
 
