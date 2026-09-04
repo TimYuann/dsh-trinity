@@ -24,13 +24,17 @@ test('selectRouting: ordered list', () => {
   assert.deepEqual(selectRouting(['exa', 'brave', 'tavily']), { kind: 'ordered', ids: ['exa', 'brave', 'tavily'] })
 })
 
-test('selectRouting: empty list → auto', () => {
-  assert.equal(selectRouting([]), 'auto')
+test('selectRouting: empty list → BAD_REQUEST (strict, was silently auto in v2.2)', () => {
+  // v2.3.0: an explicitly supplied empty list is ambiguous. The router
+  // raises WEB_PROVIDER_BAD_REQUEST instead of silently degrading to
+  // 'auto' (which the v2.2 behaviour did and is the review P0 #1
+  // symptom).
+  assert.throws(() => selectRouting([]), (err) => err && err.code === 'WEB_PROVIDER_BAD_REQUEST')
 })
 
-test('selectRouting: garbage → auto', () => {
-  assert.equal(selectRouting({}), 'auto')
-  assert.equal(selectRouting(42), 'auto')
+test('selectRouting: garbage → BAD_REQUEST (strict, was silently auto in v2.2)', () => {
+  assert.throws(() => selectRouting({}), (err) => err && err.code === 'WEB_PROVIDER_BAD_REQUEST')
+  assert.throws(() => selectRouting(42), (err) => err && err.code === 'WEB_PROVIDER_BAD_REQUEST')
 })
 
 test('normaliseRouting accepts array of provider ids (P0 #8)', () => {
@@ -38,7 +42,8 @@ test('normaliseRouting accepts array of provider ids (P0 #8)', () => {
   // selectRouting consumes.
   assert.deepEqual(selectRouting(['brave', 'exa']), { kind: 'ordered', ids: ['brave', 'exa'] })
   assert.deepEqual(selectRouting(['brave']), { kind: 'single', id: 'brave' })
-  assert.deepEqual(selectRouting([]), 'auto')
+  // v2.3.0: explicit empty array is rejected, NOT silently auto.
+  assert.throws(() => selectRouting([]), (err) => err && err.code === 'WEB_PROVIDER_BAD_REQUEST')
 })
 
 test('web_search_ex PARAMETERS: routing is a union (string OR array of strings)', () => {

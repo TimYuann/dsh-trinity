@@ -61,15 +61,15 @@ test('chainedSearch rejects empty query', async () => {
 })
 
 test('chainedSearch: explicit single provider surfaces provider error', async () => {
-  await assert.rejects(chainedSearch({ query: 'x' }, undefined, {
-    resolved: {}, rawConfig: {}, config: { searchProviderOrder: 'exa', mmxFallback: false }, keysForRedaction: [],
+  await assert.rejects(chainedSearch({ query: 'x', routing: 'exa' }, undefined, {
+    resolved: {}, rawConfig: {}, config: { mmxFallback: false }, keysForRedaction: [],
   }), (err) => /exa|missing api key/i.test(err.message))
 })
 
 test('chainedSearch: unknown provider id surfaces clear error', async () => {
-  await assert.rejects(chainedSearch({ query: 'x' }, undefined, {
-    resolved: {}, rawConfig: {}, config: { searchProviderOrder: 'totally-fake-provider', mmxFallback: false }, keysForRedaction: [],
-  }), (err) => /unknown provider|fake-provider/i.test(err.message))
+  await assert.rejects(chainedSearch({ query: 'x', routing: 'totally-fake-provider' }, undefined, {
+    resolved: {}, rawConfig: {}, config: { mmxFallback: false }, keysForRedaction: [],
+  }), (err) => err.code === 'WEB_PROVIDER_BAD_REQUEST' || /unknown provider|fake-provider/i.test(err.message))
 })
 
 test('chainedSearch: auto mode with empty creds + no mmx surfaces aggregate error', async () => {

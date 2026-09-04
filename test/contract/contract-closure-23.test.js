@@ -25,16 +25,22 @@ import { scorePassages } from '../../lib/source-check/score.js'
 // P0 #1 — strict provider pinning
 // ──────────────────────────────────────────────────────────────────────
 
-test('CC23-1: selectRouting preserves canonical {kind:"single"} form rather than silently returning "auto"', () => {
-  const r = selectRouting({ kind: 'single', id: 'exa' })
-  assert.deepEqual(r, { kind: 'single', id: 'exa' },
-    'selectRouting must recognise the canonical object form produced by web_search_ex; currently falls through to "auto" silently')
+test('CC23-1: selectRouting({kind:"single"}) must REJECT the legacy object form (P0 #1 fix)', () => {
+  // v2.3.0 contract: the chain accepts only raw strings / arrays from
+  // web_search_ex; web_search_ex no longer pre-normalises. The strict
+  // parser therefore REJECTS object inputs with WEB_PROVIDER_BAD_REQUEST
+  // rather than silently collapsing them to 'auto'.
+  assert.throws(
+    () => selectRouting({ kind: 'single', id: 'exa' }),
+    (err) => err && err.code === 'WEB_PROVIDER_BAD_REQUEST',
+    'object inputs must surface as a routing rejection, not silently fall back to "auto"',
+  )
 })
 
-test('CC23-1b: selectRouting preserves canonical {kind:"ordered"} form for an array of provider ids', () => {
+test('CC23-1b: selectRouting(["exa","tavily"]) returns the canonical ordered form', () => {
   const r = selectRouting(['exa', 'tavily'])
   assert.deepEqual(r, { kind: 'ordered', ids: ['exa', 'tavily'] },
-    'selectRouting must preserve ordered pinned lists; currently silently falls back to "auto"')
+    'selectRouting must preserve ordered pinned lists')
 })
 
 // ──────────────────────────────────────────────────────────────────────
@@ -252,10 +258,19 @@ test('CC23-8: gated-register reconciles false→true→false→true transitions 
       if (ns !== 'web-access-chain') return undefined
       return { tools: { sample: { enabled: liveEnabled } } }
     },
-    on(evt, fn) {
-      listeners.push({ evt, fn })
+    watch(handler) {
+      listeners.push(handler)
       return () => {}
     },
+    on(evt, fn) {
+      listeners.push(fn)
+      return () => {}
+    },
+  }
+  let current = { tools: { sample: { enabled: false } } }
+  const runtime = {
+    get: () => current,
+    replace: (next) => { current = next },
   }
   const ctx = {
     get(name) {
@@ -266,36 +281,43 @@ test('CC23-8: gated-register reconciles false→true→false→true transitions 
   }
   registerIfEnabled({
     ctx,
-    settings: { tools: { sample: { enabled: false } } },
-    settingsKey: () => liveEnabled,
+    runtime,
+    settingsKey: (s) => !!(s && s.tools && s.tools.sample && s.tools.sample.enabled === true),
     create: () => ({ name: 'sample' }),
     register: tools.register,
     tools,
     label: 'sample-tool',
-    safeRegister: (fn) => fn(),
+    safeRegister: (fn) => {
+      const d = fn()
+      return () => { try { if (typeof d === 'function') d() } catch { /* ignore */ } }
+    },
   })
 
-  function fire() {
+  function setEnabled(v) {
+    liveEnabled = v
+    current = { tools: { sample: { enabled: v } } }
     for (const l of listeners) {
-      try { l.fn({ namespace: 'web-access-chain' }) } catch { /* ignore */ }
+      try {
+        if (typeof l === 'function') l(current)
+      } catch { /* ignore */ }
     }
   }
+
   // false → true
-  liveEnabled = true; fire()
-  // true → true (idempotent, no extra register)
-  liveEnabled = true; fire()
+  setEnabled(true)
+  // true → true (idempotent)
+  setEnabled(true)
   // true → false (must dispose)
-  liveEnabled = false; fire()
+  setEnabled(false)
   // false → true (must register again)
-  liveEnabled = true; fire()
+  setEnabled(true)
 
   const registers = registrations.filter((r) => r.type === 'register')
   const disposes = registrations.filter((r) => r.type === 'dispose')
   assert.ok(disposes.length >= 1,
     `gate must dispose when toggled false; got ${registrations.length} entries, ${disposes.length} disposes`)
-  // We do not pin the exact count of registers (depends on how the helper
-  // collapses events), but the dispose count is the load-bearing
-  // assertion: at baseline it is always 0.
+  assert.ok(registers.length >= 1,
+    `gate must register when toggled true; got ${registers.length} registers`)
 })
 
 // ──────────────────────────────────────────────────────────────────────

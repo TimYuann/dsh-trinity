@@ -217,8 +217,9 @@ test('P0 #6: registerIfEnabled subscribes to settings.on change for runtime gate
   const registered = []
   const changeListeners = []
   const settingsSvc = {
+    watch(fn) { changeListeners.push(fn); return () => {} },
     on(event, fn) {
-      if (event === 'change') changeListeners.push(fn)
+      if (event === 'change') changeListeners.push((next) => fn({ namespace: 'web-access-chain', settings: next }))
       return () => {}
     },
     get(ns) {
@@ -227,21 +228,25 @@ test('P0 #6: registerIfEnabled subscribes to settings.on change for runtime gate
     },
   }
   const ctx = { get: (k) => (k === 'settings' ? settingsSvc : null) }
+  const runtime = {
+    get: () => settingsState.current,
+    replace: (next) => { settingsState.current = next },
+  }
   registerIfEnabled({
     ctx,
-    settings: settingsState.current,
+    runtime,
     settingsKey: (s) => !!(s && s.tools && s.tools.pdfExtract && s.tools.pdfExtract.enabled === true),
     create: () => ({ kind: 'pdf_extract_tool' }),
     register: (t) => { registered.push(t); return () => { registered.pop() } },
     label: 'tools.pdf_extract',
-    safeRegister: (fn) => fn(),
+    safeRegister: (fn) => { const d = fn(); return () => { try { if (typeof d === 'function') d() } catch { /* ignore */ } } },
   })
   // Initially disabled — no registration.
   assert.equal(registered.length, 0)
   // Flip the gate + fire change.
   settingsState.current = { tools: { pdfExtract: { enabled: true } } }
   for (const fn of changeListeners) {
-    fn({ namespace: 'web-access-chain' })
+    fn(settingsState.current)
   }
   assert.ok(registered.length >= 1, 'expected tool to be registered after settings change')
 })
@@ -628,14 +633,18 @@ test('P3 #23: makeCapabilities allows an optional `extra` callback for runtime d
 test('P3 #24: registerIfEnabled skips registration when settings gate is closed', async () => {
   const { registerIfEnabled } = await import('../lib/util/gated-register.js')
   let registered = 0
+  const runtime = {
+    get: () => ({ tools: { githubPrIssue: { enabled: false } } }),
+    replace: () => {},
+  }
   registerIfEnabled({
     ctx: { get: () => null },
-    settings: { tools: { githubPrIssue: { enabled: false } } },
+    runtime,
     settingsKey: (s) => !!(s && s.tools && s.tools.githubPrIssue && s.tools.githubPrIssue.enabled === true),
     create: () => ({ kind: 'tool' }),
     register: () => { registered++; return () => {} },
     label: 'tools.github_pr_issue',
-    safeRegister: (fn) => fn(),
+    safeRegister: (fn) => { const d = fn(); return () => { try { if (typeof d === 'function') d() } catch { /* ignore */ } } },
   })
   assert.equal(registered, 0)
 })
