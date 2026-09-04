@@ -18,7 +18,9 @@
     "test": "node --test test/*.test.js test/integration/*.test.js test/credentials/*.test.js test/cache/*.test.js test/source-check/*.test.js test/commands/*.test.js test/skills/*.test.js test/adapters/*.test.js test/contract/*.test.js test/providers/fetch/*.test.js",
     "sync-bundle": "node bin/sync-bundle.js",
     "sync-bundle:check": "node bin/sync-bundle.js --check",
-    "lint:no-llm-in-providers": "node bin/lint-no-llm-in-providers.js"
+    "lint:no-llm-in-providers": "node bin/lint-no-llm-in-providers.js",
+    "check:no-llm-in-providers": "node scripts/check-no-llm-in-providers.mjs",
+    "check:provider-client-sync": "node scripts/check-provider-client-sync.mjs"
   },
   "keywords": [
     "dsh",
