@@ -72,8 +72,11 @@ test('authHeadersFor: bearer', () => {
   assert.deepEqual(authHeadersFor({ type: 'bearer' }, 'xyz'), { Authorization: 'Bearer xyz' })
 })
 
-test('authHeadersFor: basic', () => {
-  assert.deepEqual(authHeadersFor({ type: 'basic' }, 'user:pass'), { Authorization: 'Basic user:pass' })
+test('authHeadersFor: basic (RFC 7617 — Base64-encoded per v2.3.0)', () => {
+  // v2.3.0 § Commit 3.5: Basic credentials are Base64-encoded.
+  // user:pass → 'dXNlcjpwYXNz'
+  assert.deepEqual(authHeadersFor({ type: 'basic' }, 'user:pass'),
+    { Authorization: 'Basic dXNlcjpwYXNz' })
 })
 
 test('authHeadersFor: cookie', () => {

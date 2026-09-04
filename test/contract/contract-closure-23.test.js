@@ -104,7 +104,9 @@ test('CC23-5: cross-origin redirect strips Authorization in chainedFetch interna
       { url: 'https://api.example.com/v1', authFetch: 'profile-1' },
       undefined,
       {
-        ssrf: { allowRanges: [], trustEnvProxy: false },
+        // v2.3.0: trustEnvProxy=true skips the DNS preflight so the
+        // test can exercise the cross-origin strip without real DNS.
+        ssrf: { allowRanges: [], trustEnvProxy: true },
         domainPolicy: { allow: [], deny: [] },
         maxBytes: 1024,
         ctx: {
