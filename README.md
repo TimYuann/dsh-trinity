@@ -10,7 +10,8 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 
 - 支持 Exa、AnySearch、Gemini、Tavily、Brave、Jina、Kagi、Perplexity 等多种搜索 Provider。
 - `web_search_ex` 支持四种路由方式：自动选择、聚合、多 Provider 有序回退、强制指定单一 Provider。
-- 单一 Provider 路由严格执行：指定 Provider 失败时返回结构化错误，不会静默切换到其他 Provider。
+- 单一 Provider 路由严格执行：v2.3.0 严格化解析，未知 Provider ID 直接抛出 `WEB_PROVIDER_BAD_REQUEST` 而不是静默回落到 `auto`。
+- Provider 凭据来源统一通过 `lib/providers/provider-metadata.js` 维护；`FIRECRAWL_KEY` 等历史拼写视为只读别名，UI 只写规范名。
 - 支持每个 Provider 的多 Key 轮换、配额冷却、超时与失败分类。
 - MiniMax 搜索可作为自动路由的可选兜底能力。
 
@@ -20,7 +21,8 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 - 支持 HTML、RSS/Atom、PDF、GitHub、YouTube 等内容适配器。
 - 提供 Readability / Defuddle 内容提取、Markdown 转换与 RSC 页面识别。
 - 提供 SSRF 防护：阻止本机、私网、保留网段及危险重定向。
-- 支持域名 allow/deny policy、代理与受限的认证抓取配置。
+- 支持域名 allow/deny policy。所有直接 HTTP I/O 走唯一一条 `safeHttpFetch`：跨域重定向时不携带敏感头，DNS 通过 `trustEnvProxy=true` 时短路否则在连接时绑定。
+- v2.3.0: DSH 原生 `web_fetch` 公开接口只有 `{ url }`；`authFetch` 配置已被从公开 schema 中移除，不会向模型承诺一个它无法使用的认证 profile。
 
 ### 工具、核验与运维
 
@@ -42,7 +44,7 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ```bash
 # 安装到 web profile；也可将 web 替换为 dev 等独立 profile
-dsh plugin --profile web add dsh-trinity@2.2.3
+dsh plugin --profile web add dsh-trinity@2.3.0-rc.0
 
 # 重启该 profile 的 DSH Web host
 dsh web --port 4599
@@ -142,7 +144,10 @@ DSH Trinity 已在真实 `dev` Profile 与 DSH `0.1.2-alpha.4` 上验证：
 - `web-search-deepseek` 仅在启用本插件的 Profile 中被禁用；
 - 真实 `ctx.web.fetch({ url: "https://example.com" })` 已通过 `web-access-chain-fetch` 返回成功结果。
 
-详细证据见 `docs/dsh-alpha4-compatibility-plan.md` 与 `docs/routing-integrity-investigation.md`。
+> v2.3.0: `web-access-chain-search` 与 `web-access-chain-fetch` 的
+> namespaced provider ID 已经成为稳定 API。任何基于 `searchProvider`
+> 之外的 monkey-patching 都已不再需要；迁移说明见
+> `BASELINE_v2.3.0.md` 与本仓库的 release notes。
 
 ## 安全边界
 

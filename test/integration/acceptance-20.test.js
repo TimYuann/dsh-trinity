@@ -383,11 +383,11 @@ test('AC #20: source_check Tool has full 6-step algorithm + immutable snapshot r
 })
 
 // ── meta: v2.2.3 package metadata ────────────────────────────────────
-test('R1 metadata: package name is dsh-trinity v2.2.3', () => {
+test('R1 metadata: package name is dsh-trinity v2.3.0-rc.0', () => {
   assert.equal(PKG.name, 'dsh-trinity')
-  assert.equal(PKG.version, '2.2.3')
+  assert.equal(PKG.version, '2.3.0-rc.0')
   assert.equal(name, 'web-access-chain')
-  assert.equal(version, '2.2.3')
+  assert.equal(version, '2.3.0-rc.0')
 })
 
 // ── R2 follow-up: regression coverage for the reviewer's findings ─────
