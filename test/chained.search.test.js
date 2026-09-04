@@ -13,9 +13,12 @@ import {
 } from '../lib/providers/search/chained.js'
 import { toIso8601, isValidIso8601 } from '../lib/iso8601.js'
 
-test('provider registry has exactly 27 providers (25 R1 + kimi + parallelMcp)', () => {
-  assert.equal(Object.keys(PROVIDER_REGISTRY).length, 27)
-  assert.equal(ALL_ELIGIBLE_PROVIDERS.length, 18)
+// v2.3.0: the openai Hosted Search half-implementation was removed
+// (review § P0#3). Registry is now 26 providers (24 + kimi +
+// parallelMcp) and the auto chain is 17.
+test('provider registry has exactly 26 providers (24 + kimi + parallelMcp)', () => {
+  assert.equal(Object.keys(PROVIDER_REGISTRY).length, 26)
+  assert.equal(ALL_ELIGIBLE_PROVIDERS.length, 17)
   assert.equal(EXPLICIT_ONLY_PROVIDERS.length, 9) // 7 + kimi + parallelMcp
 })
 

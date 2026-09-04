@@ -59,11 +59,12 @@ test('probe.run({ activeProbe: true }) marks activeProbe', async () => {
   assert.equal(r.activeProbe, true)
 })
 
-test('probe reports all 18 + 9 + 1 (mmx) providers', async () => {
+test('probe reports all 17 + 9 + 1 (mmx) providers', async () => {
   const probe = createProbe(makeStubCtx(), null)
   const r = await probe.run({})
-  // 18 all-eligible + 9 explicit-only (7 + kimi + parallelMcp) + 1 mmx = 28
-  assert.equal(r.providers.length, 28)
+  // v2.3.0: openai removed. 17 all-eligible + 9 explicit-only
+  // (7 + kimi + parallelMcp) + 1 mmx = 27.
+  assert.equal(r.providers.length, 27)
 })
 
 test('probe reports 5 adapters', async () => {

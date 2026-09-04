@@ -385,3 +385,91 @@ test('CC23-9b: scorePassages does not blow up on long Chinese bodies and produce
       `every passage must carry a valid label (got: ${p.label})`)
   }
 })
+
+// ──────────────────────────────────────────────────────────────────────
+// Post-review regression locks — added after the GPT-5.6 Pro review
+// reported real defects in this contract surface.
+// ──────────────────────────────────────────────────────────────────────
+
+test('CC23-R1: safeHttpFetch redirect without authProfile does not throw ReferenceError', async () => {
+  // The previous safe-http-fetch.js referenced an undefined variable
+  // `nextHopAccepted` on the no-authProfile redirect path (the common
+  // case). The fix collapses to `nextHeaders = nextHeaders`. This
+  // regression lock reproduces the production shape and asserts that
+  // a 302 redirect on a non-profile request completes the chain.
+  const calls = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    const u = typeof url === 'string' ? url : url.toString()
+    calls.push(u)
+    if (u === 'https://example.com/v1') {
+      return new Response(null, { status: 302, headers: { location: 'https://example.org/next' } })
+    }
+    return new Response('<html>ok</html>', { status: 200, headers: { 'content-type': 'text/html' } })
+  }
+  try {
+    const { safeHttpFetch } = await import('../../lib/util/safe-http-fetch.js')
+    const r = await safeHttpFetch('https://example.com/v1', {
+      maxBytes: 1024,
+      ssrf: { allowRanges: [], trustEnvProxy: true },
+      domainPolicy: { allow: [], deny: [] },
+      // NOTE: no authProfile — the path that triggered the ReferenceError.
+    })
+    assert.ok(r)
+    assert.equal(r.statusCode, 200)
+    assert.equal(r.redirectChain.length, 1)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('CC23-R2: selectRouting rejects unknown provider id even when knownIds is empty (strict) → BAD_REQUEST', () => {
+  // Pre-fix: empty knownIds silently accepted ANY provider id.
+  // Post-fix: an empty knownIds set is treated as "chain not
+  // initialised", so provider-id routing raises BAD_REQUEST. Only
+  // the safe modes ('auto' / 'aggregate') continue to pass through.
+  const EMPTY = { knownIds: [] }
+  assert.throws(
+    () => { selectRouting('exa', EMPTY) },
+    (e) => e && e.code === 'WEB_PROVIDER_BAD_REQUEST',
+    'empty knownIds must still reject unknown-looking provider pins',
+  )
+  assert.equal(selectRouting('auto', EMPTY), 'auto')
+  assert.equal(selectRouting('aggregate', EMPTY), 'aggregate')
+  // With non-empty knownIds, only known ids are accepted.
+  assert.deepEqual(selectRouting('exa', { knownIds: ['exa', 'brave'] }),
+    { kind: 'single', id: 'exa' })
+  assert.throws(
+    () => selectRouting('definitely-not-a-provider', { knownIds: ['exa'] }),
+    (e) => e && e.code === 'WEB_PROVIDER_BAD_REQUEST',
+  )
+})
+
+test('CC23-R3: resolveCredentialPool walks alias spellings when canonical ref is absent', async () => {
+  // The pre-fix commit (5c0c79b) imported canonicalizeRef and
+  // fallbackEnvNames but never wired them into resolveCredentialPool.
+  // Post-fix: when canonical FIRECRAWL_API_KEY is missing, the
+  // resolver walks FIRECRAWL_KEY and surfaces the legacy raw spelling.
+  const { resolveCredentialPool } = await import('../../lib/credentials/resolve.js')
+  const ctx = {
+    get(name) {
+      if (name !== 'credentials') return undefined
+      return {
+        async resolve(ref) {
+          if (ref === 'FIRECRAWL_KEY') return { value: 'legacy-key-value', source: 'legacy' }
+          // canonical FIRECRAWL_API_KEY and rotation suffixes
+          // intentionally return nothing.
+          return undefined
+        },
+      }
+    },
+  }
+  const out = await resolveCredentialPool('firecrawl', ctx, 3)
+  assert.ok(out['FIRECRAWL_API_KEY'], 'canonical keyed slot must be populated through alias fallback')
+  assert.equal(out['FIRECRAWL_API_KEY'].key, 'legacy-key-value')
+  assert.equal(out['FIRECRAWL_API_KEY'].raw, 'FIRECRAWL_KEY')
+  // Slots ≥ 2 stay null when the legacy alias rotation was not
+  // configured by the operator.
+  assert.equal(out['FIRECRAWL_API_KEY_2'], null)
+  assert.equal(out['FIRECRAWL_API_KEY_3'], null)
+})
