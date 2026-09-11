@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { selectRouting } from '../lib/providers/search/chained.js'
-import { PARAMETERS } from '../lib/tools/web-search-ex.js'
+import { PARAMETERS, OUTPUT } from '../lib/tools/web-search-ex.js'
 
 test('selectRouting: undefined → auto', () => {
   assert.equal(selectRouting(undefined), 'auto')
@@ -68,4 +68,39 @@ test('web_search_ex PARAMETERS: NO "mode" parameter (v1 had mode=sources-only/an
 test('web_search_ex PARAMETERS: NO "provider" parameter (replaced by routing)', () => {
   // v1 had `provider: 'auto' | 'all' | <name>`; v2.0 uses `routing`.
   assert.equal(PARAMETERS.provider, undefined, 'provider parameter replaced by routing in v2.0')
+})
+
+// ── Defect C: the serving provider must be visible in the output ──────
+//
+// 2026-09-11, main instance: `web_search_ex(routing="auto")` rendered
+// answer + sources only. The `provider` field was already in the
+// structured value (schema §provider), but with nothing rendering it the
+// only way to learn which provider served a call was to re-run the same
+// query pinned to one provider and compare.
+
+const { render } = OUTPUT
+
+test('web_search_ex render: prints the serving provider before the sources', () => {
+  const blocks = render({}, {
+    provider: 'aggregate',
+    sources: [{ url: 'https://example.com/a', title: 'A' }],
+  })
+  assert.equal(blocks[0].type, 'text')
+  assert.equal(blocks[0].text, 'provider: aggregate')
+  const srcIndex = blocks.findIndex((b) => /example\.com/.test(b.text))
+  assert.ok(srcIndex > 0, 'provider line precedes the sources')
+})
+
+test('web_search_ex render: omits the provider line when the value has none', () => {
+  const blocks = render({}, { sources: [{ url: 'https://example.com/a' }] })
+  assert.ok(!blocks.some((b) => /^provider:/.test(b.text)))
+})
+
+test('web_search_ex render: caps the provider-error wall but keeps the count', () => {
+  const providerErrors = Array.from({ length: 30 }, (_, i) => ({ provider: `p${i}`, error: 'X_API_KEY:credential' }))
+  const blocks = render({}, { provider: 'aggregate', sources: [], providerErrors })
+  const errBlock = blocks.find((b) => b.text.includes('## Provider errors'))
+  assert.ok(errBlock, 'errors are still reported')
+  assert.equal(errBlock.text.split('\n').filter((l) => l.startsWith('- ')).length, 13, '12 lines + the count line')
+  assert.match(errBlock.text, /and 18 more/)
 })
