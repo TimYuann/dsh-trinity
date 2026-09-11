@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { decomposeClaim } from '../lib/source-check/decompose.js'
+import { decomposeClaim, sanitizeQueries, splitSubQueryLines } from '../lib/source-check/decompose.js'
 import { scorePassages } from '../lib/source-check/score.js'
 import { assessClaim } from '../lib/source-check/assess.js'
 
@@ -16,6 +16,91 @@ test('decomposeClaim: returns 2-4 sub-queries (heuristic fallback when no LLM)',
     assert.equal(typeof q, 'string')
     assert.ok(q.length > 0)
   }
+})
+
+// ── Defect B: the line-splitting fallback leaked model reasoning ──────
+//
+// 2026-09-11, main instance. `source_check` printed:
+//   1. We need answer only JSON array of strings. Need decompose claim …
+//   2. How does a patch entry in a dsh profile apply to a targeted row …
+// The first "sub-query" was the model thinking out loud. It did not just
+// look wrong: subQueries are tokenized into the passage score
+// (lib/source-check/score.js), so the prose polluted the ranking too.
+
+/** Minimal llm seam stub returning a fixed completion. */
+function llmCtx(completion) {
+  return {
+    get(key) {
+      if (key === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'test', model: 'test-model' }) }
+      if (key === 'llm') {
+        return {
+          async prepareCall() {
+            return {
+              config: { provider: 'test', model: 'test-model' },
+              stream: () => (async function* () {
+                yield { type: 'text-delta', text: completion }
+              })(),
+            }
+          },
+        }
+      }
+      return null
+    },
+  }
+}
+
+test('decomposeClaim: reasoning prose from the LLM never becomes a sub-query', async () => {
+  const raw = [
+    'We need answer only JSON array of strings. Need decompose claim into 3 sub-queries that would support or contradict it.',
+    '1. How does a patch entry in a dsh profile apply to a targeted row',
+    '2. In dsh, when a bundle patch targets a row, does it need to restate all keys',
+  ].join('\n')
+  const r = await decomposeClaim('a bundle patch applies per row', 3, { ctx: llmCtx(raw) })
+  assert.equal(r.length, 2, `expected the two real queries, got: ${JSON.stringify(r)}`)
+  for (const q of r) {
+    assert.ok(!/we need|json array|return only/i.test(q), `narration leaked: ${q}`)
+    assert.ok(!/^\d+[.)]\s/.test(q), `list marker leaked: ${q}`)
+  }
+  assert.match(r[0], /^How does a patch entry/)
+})
+
+test('decomposeClaim: prose-only completion falls back to heuristics', async () => {
+  const raw = 'We need to decompose the claim into sub-queries. Return ONLY a JSON array of strings, no other text.'
+  const r = await decomposeClaim('the moon landing happened in 1969', 3, { ctx: llmCtx(raw) })
+  assert.equal(r.length, 3)
+  for (const q of r) {
+    assert.ok(!/we need|json array|return only/i.test(q), `narration leaked: ${q}`)
+    assert.match(q, /the moon landing happened in 1969/, 'heuristic queries carry the claim')
+  }
+})
+
+test('decomposeClaim: a well-formed JSON array is still used as-is', async () => {
+  const raw = '["apollo 11 landing date", "moon landing 1969 evidence", "moon landing hoax claims"]'
+  const r = await decomposeClaim('the moon landing happened in 1969', 3, { ctx: llmCtx(raw) })
+  assert.deepEqual(r, ['apollo 11 landing date', 'moon landing 1969 evidence', 'moon landing hoax claims'])
+})
+
+test('decomposeClaim: queries quoted inside prose are preferred over the prose', async () => {
+  const raw = 'Here are 3 sub-queries:\n"apollo 11 landing date"\n"moon landing 1969 evidence"\n"moon landing hoax claims"'
+  const r = await decomposeClaim('the moon landing happened in 1969', 3, { ctx: llmCtx(raw) })
+  assert.deepEqual(r, ['apollo 11 landing date', 'moon landing 1969 evidence', 'moon landing hoax claims'])
+})
+
+test('sanitizeQueries: drops markers, narration, JSON scaffolding and duplicates', () => {
+  const out = sanitizeQueries([
+    '- how does the credential pool rotate keys?',
+    '1. how does the credential pool rotate keys?', // duplicate after marker strip
+    'We need to return only JSON array of strings', // narration
+    '{"query": "nested json scaffolding"}',         // scaffolding
+    'Sub-queries:',                                  // lead-in
+    'x',                                             // too short
+  ])
+  assert.deepEqual(out, ['how does the credential pool rotate keys?'])
+})
+
+test('splitSubQueryLines: an empty completion yields no candidates', () => {
+  assert.deepEqual(splitSubQueryLines(''), [])
+  assert.deepEqual(splitSubQueryLines(null), [])
 })
 
 test('scorePassages: top N by lexical overlap with claim', () => {
