@@ -34,16 +34,72 @@ function devProfileExists() {
   return existsSync(join(DEV_PROFILE, 'package.json'))
 }
 
-function readDevDumpConfig() {
+function readDevDumpConfig(t) {
   // Dump the dev profile composition. `dsh --dump-config` writes to
   // stdout and exits 0 on success. The dev profile must already be
   // initialized and contain the plugin (per docs/dsh-alpha4-compatibility-plan.md).
-  const out = execFileSync('dsh', ['--dump-config', '--profile', 'dev'], {
-    cwd: DEV_PROFILE,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+  //
+  // The dump is not read-only: dsh rewrites the profile's cordis.yml on
+  // the way in. Under a read-only or sandboxed profile, or on a machine
+  // without `dsh` on PATH, the spawn fails for reasons that say nothing
+  // about the composition. Those become a skip; anything else is a real
+  // error and propagates.
+  let out
+  try {
+    out = execFileSync('dsh', ['--dump-config', '--profile', 'dev'], {
+      cwd: DEV_PROFILE,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (err) {
+    const reason = classifyDumpEnvironmentFailure(err)
+    if (reason) {
+      t.skip(`cannot observe the dev composition here: ${reason}`)
+      return null
+    }
+    throw err
+  }
   return out
+}
+
+/**
+ * Return a human-readable reason when the dump failed for an
+ * environmental cause -- no `dsh` binary, or a profile the process may
+ * not write -- or null when the failure must propagate as a real error.
+ *
+ * Without this, a sandboxed or read-only checkout reports three red
+ * composition tests that are indistinguishable from an actual broken
+ * composition, which is exactly the false alarm this suite exists to
+ * prevent.
+ *
+ * @param {any} err
+ * @returns {string | null}
+ */
+function classifyDumpEnvironmentFailure(err) {
+  const code = err && err.code
+  // Spawn itself failing means there is no `dsh` to ask.
+  if (code === 'ENOENT') return '`dsh` is not on PATH'
+
+  // Otherwise dsh DID run and exited non-zero: execFileSync reports that
+  // in `err.status`, keeps `err.code` undefined, and leaves the fs error
+  // in the child's stderr. So read the signal from stderr, not `code`.
+  const stderr = stderrText(err)
+  const match = stderr.match(/\b(EPERM|EACCES|EROFS)\b/)
+  if (match) {
+    const file = stderr.match(/'([^']+)'/)
+    return `the dev profile is not writable (${match[1]}${file ? ` on ${file[1]}` : ''}) -- dsh --dump-config rewrites cordis.yml`
+  }
+  return null
+}
+
+/**
+ * @param {any} err
+ * @returns {string}
+ */
+function stderrText(err) {
+  const raw = err && err.stderr
+  if (!raw) return ''
+  return typeof raw === 'string' ? raw : raw.toString('utf8')
 }
 
 // Extract the effective row for a given `id` from the dumped YAML.
@@ -74,7 +130,8 @@ test('Alpha 4 dev composition: tool-web row has disabled=false and config.fetch=
     t.skip(`dev profile not found at ${DEV_PROFILE}; see docs/dsh-alpha4-compatibility-plan.md §1.1 to enable`)
     return
   }
-  const yaml = readDevDumpConfig()
+  const yaml = readDevDumpConfig(t)
+  if (yaml === null) return // skipped: environment cannot observe the composition
   const row = findRow(yaml, 'tool-web')
   assert.ok(row, 'tool-web row must be present in dev composition')
   assert.equal(row.fields.disabled, 'false',
@@ -95,7 +152,8 @@ test('Alpha 4 dev composition: web-search-deepseek row is disabled', (t) => {
     t.skip(`dev profile not found at ${DEV_PROFILE}`)
     return
   }
-  const yaml = readDevDumpConfig()
+  const yaml = readDevDumpConfig(t)
+  if (yaml === null) return // skipped: environment cannot observe the composition
   const row = findRow(yaml, 'web-search-deepseek')
   assert.ok(row, 'web-search-deepseek row must be present in dev composition')
   assert.equal(row.fields.disabled, 'true',
@@ -107,7 +165,8 @@ test('Alpha 4 dev composition: web.searchProvider / web.fetchProvider point to t
     t.skip(`dev profile not found at ${DEV_PROFILE}`)
     return
   }
-  const yaml = readDevDumpConfig()
+  const yaml = readDevDumpConfig(t)
+  if (yaml === null) return // skipped: environment cannot observe the composition
   const row = findRow(yaml, 'web')
   assert.ok(row, 'web row must be present in dev composition')
   // The dump nests the `config` map; flatten it by scanning the sub-block.
