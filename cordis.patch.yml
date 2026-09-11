@@ -12,12 +12,14 @@
 #     loader imports lib/index.js and runs apply(ctx, config), which is the
 #     only place that calls ctx.web.registerSearchProvider +
 #     ctx.web.registerFetchProvider + ctx.tools.register.
-# (5) Alpha 4: undo dsh-web-app's `tool-web: disabled: true`. dsh-base now
-#     ships tool-web with `fetch: true` by default (alpha.4 A4-06), but
-#     dsh-web-app disables the whole row in its own patch layer, so on
-#     any profile that mounts dsh-web-app the model-facing web_fetch /
-#     web_search tool disappears. This row re-enables it. Do NOT restate
-#     `config.fetch: true` here — the alpha.4 base default covers it.
+# (5) Alpha 4 historical compatibility: undo dsh-web-app's
+#     `tool-web: disabled: true`. dsh-base now ships tool-web with
+#     `fetch: true` by default (alpha.4 A4-06), but dsh-web-app disables
+#     the whole row in its own patch layer, so on any profile that
+#     mounts dsh-web-app the model-facing web_fetch / web_search tool
+#     disappears. This row re-enables it. rc.1+ 下为 no-op，保留以兼容
+#     仍在 alpha.4 的 profile. Do NOT restate `config.fetch: true` here
+#     — the alpha.4 base default covers it.
 #
 # v2.2: credential refs are DSH env-name refs (EXA_API_KEY / …) — manage
 # with `/webdoctor-keys set <provider> <key>`; settings namespace is

@@ -6,7 +6,7 @@ the SHA below.
 ```text
 base SHA:  1274fb4b43cc5f615cf3cd8d4098a1d739ab7c5e
 package:   dsh-trinity@2.2.3
-target DSH: 0.1.2-rc.1
+target DSH: 0.1.5-rc.2
 branch:    release/2.3.0
 ```
 
@@ -48,7 +48,7 @@ The 3 failing tests are integration tests in
 `test/integration/dev-alpha4-composition.test.js` that shell out to
 `dsh --dump-config --profile dev`. Those failures are environment-driven
 (not code-driven) and were not introduced by the reviewed defects; per
-Section 6.2 they will be re-evaluated against a clean DSH `0.1.2-rc.1`
+Section 6.2 they will be re-evaluated against a clean DSH `0.1.5-rc.2`
 profile at the end of the repair.
 
 ## Frozen records for downstream commits
@@ -99,7 +99,7 @@ lib/cache/index.js          — ttlMs defaults to 3 600 000 when input.ttlMs is 
 | # | Stop condition | Current state |
 |---|---|---|
 | 1 | base SHA differs | matches baseline SHA |
-| 2 | DSH seam differs | to be re-verified against `0.1.2-rc.1` in Section 6.2 |
+| 2 | DSH seam differs | to be re-verified against `0.1.5-rc.2` in Section 6.2 |
 | 3 | DNS pinning cannot govern fetch | not yet attempted (commit 3) |
 | 4 | provider cannot honor abort | not yet attempted (commit 3) |
 | 5 | schema field cannot be tied | not yet attempted (commit 5) |

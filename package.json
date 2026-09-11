@@ -10,6 +10,7 @@
   },
   "files": [
     "lib",
+    "!lib/_deferred",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

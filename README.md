@@ -144,6 +144,8 @@ DSH Trinity 已在真实 `dev` Profile 与 DSH `0.1.2-alpha.4` 上验证：
 - `web-search-deepseek` 仅在启用本插件的 Profile 中被禁用；
 - 真实 `ctx.web.fetch({ url: "https://example.com" })` 已通过 `web-access-chain-fetch` 返回成功结果。
 
+> **2026-09-11 补充**：实测兼容 DSH 0.1.5-rc.2；`tool-web` patch 在 rc.1+ 下为 no-op；其余 host 接触面（`ctx.llm` / `agentDefaultModel` / `slots.settings.section` 等）经核对未变更。
+
 > v2.3.0: `web-access-chain-search` 与 `web-access-chain-fetch` 的
 > namespaced provider ID 已经成为稳定 API。任何基于 `searchProvider`
 > 之外的 monkey-patching 都已不再需要；迁移说明见
