@@ -48,7 +48,9 @@ test('shapeResult normalises ISO-8601 and drops garbage dates', () => {
     ],
   }, 5)
   assert.equal(r.sources.length, 3)
-  assert.equal(r.sources[0].publishedAt, '2026-02-04T15:39:58.000Z')
+  // A zone-less timestamp is pinned to UTC, so this expectation holds on
+  // every host (test/iso8601.test.js proves the cross-timezone invariance).
+  assert.equal(r.sources[0].publishedAt, '2026-02-04T23:39:58.000Z')
   assert.equal(r.sources[1].publishedAt, undefined)
   assert.equal(r.sources[2].publishedAt, undefined)
 })
