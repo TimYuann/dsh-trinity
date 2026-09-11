@@ -174,7 +174,9 @@ test('P0 #4: activeProbe:true records lastPing per provider (without making real
     const pinged = out.providers.filter((p) => p.lastPing)
     assert.ok(pinged.length > 0, 'expected at least one provider with lastPing after active probe')
     for (const p of pinged) {
-      assert.ok(['healthy', 'unhealthy', 'timeout', 'dns-error', 'connection-error', 'unknown'].includes(p.lastPing.status),
+      // 2026-09-11: `reachable` added. A keyless HEAD that gets 401/403/405
+      // proves the endpoint is up, so it must not be reported as unhealthy.
+      assert.ok(['healthy', 'reachable', 'unhealthy', 'timeout', 'dns-error', 'connection-error', 'unknown'].includes(p.lastPing.status),
         `unexpected status: ${p.lastPing.status}`)
     }
   } finally {

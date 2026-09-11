@@ -165,3 +165,61 @@ test('probe: an observed pool still reports numeric health', async () => {
     setPoolState('exa', [])
   }
 })
+
+// ── Regression: a keyless HEAD can prove reachability, not health ─────
+//
+// 2026-09-11 sweep of the 15 mapped health endpoints with the probe's
+// own ping: only 3 answered 2xx. The rest were 401/403/405 (the host is
+// up and declining) or 404 (no health path) — yet the old rule called
+// every non-2xx "unhealthy". Since the passive report now points users
+// at activeProbe, a wall of false failures is worse than no probe.
+
+/** Run an active probe with `fetch` stubbed, and return exa's lastPing. */
+async function pingExaWith(stub) {
+  const origFetch = globalThis.fetch
+  globalThis.fetch = stub
+  try {
+    const probe = createProbe(makeStubCtx(), null)
+    const r = await probe.run({ activeProbe: true })
+    return r.providers.find((p) => p.id === 'exa').lastPing
+  } finally {
+    globalThis.fetch = origFetch
+  }
+}
+
+const respondWith = (status) => async () => new Response(null, { status })
+
+test('ping: 2xx is healthy', async () => {
+  const p = await pingExaWith(respondWith(200))
+  assert.equal(p.status, 'healthy')
+})
+
+test('ping: 401 / 403 / 405 mean reachable, not unhealthy', async () => {
+  for (const status of [401, 403, 405]) {
+    const p = await pingExaWith(respondWith(status))
+    assert.equal(p.status, 'reachable', `HTTP ${status} proves the service answered`)
+    assert.equal(p.httpStatus, status)
+  }
+})
+
+test('ping: 404 means unknown, not unhealthy (no health path)', async () => {
+  const p = await pingExaWith(respondWith(404))
+  assert.equal(p.status, 'unknown')
+  assert.equal(p.reason, 'no-health-path')
+})
+
+test('ping: 5xx is the only response class called unhealthy', async () => {
+  const p = await pingExaWith(respondWith(503))
+  assert.equal(p.status, 'unhealthy')
+  assert.equal(p.httpStatus, 503)
+})
+
+test('ping: a refused connection is reported as unreachable, not unhealthy', async () => {
+  const p = await pingExaWith(async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:443') })
+  assert.equal(p.status, 'connection-error')
+})
+
+test('ping: a timeout is reported as timeout', async () => {
+  const p = await pingExaWith(async () => { throw new Error('The operation was aborted') })
+  assert.equal(p.status, 'timeout')
+})
