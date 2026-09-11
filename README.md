@@ -8,9 +8,10 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 
 ### 搜索与路由
 
-- 支持 Exa、AnySearch、Gemini、Tavily、Brave、Jina、Kagi、Perplexity 等多种搜索 Provider。
+- 共 **26 个**搜索 Provider（`lib/providers/provider-metadata.js` 为准）：**18 个**参与 `auto` 链与 `aggregate` 扇出，**8 个**（`duckduckgo`、`xai`、`brightdata`、`serpbase`、`serper`、`valyu`、`kimi`、`parallelMcp`）仅显式指定时调用。其中 Exa、AnySearch、Gemini、Tavily、Brave、Jina、Kagi、Perplexity 等 25 个可在设置页配置密钥。
 - `web_search_ex` 支持四种路由方式：自动选择、聚合、多 Provider 有序回退、强制指定单一 Provider。
 - 单一 Provider 路由严格执行：v2.3.0 严格化解析，未知 Provider ID 直接抛出 `WEB_PROVIDER_BAD_REQUEST` 而不是静默回落到 `auto`。
+- `aggregate` 扇出前先按凭据可用性收敛：只调用**确实能解析出 key / host** 的 Provider，因此无 key 的 Provider 不会消耗 `maxProvidersPerSearch` 预算、不会产生 `providerErrors`、也不会把自己的占位池写进运行时状态。全部无凭据时直接失败并说明原因，而不是先跑一轮必然失败的调用。
 - Provider 凭据来源统一通过 `lib/providers/provider-metadata.js` 维护；`FIRECRAWL_KEY` 等历史拼写视为只读别名，UI 只写规范名。
 - 支持每个 Provider 的多 Key 轮换、配额冷却、超时与失败分类。
 - MiniMax 搜索可作为自动路由的可选兜底能力。
@@ -21,8 +22,8 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 - 支持 HTML、RSS/Atom、PDF、GitHub、YouTube 等内容适配器。
 - 提供 Readability / Defuddle 内容提取、Markdown 转换与 RSC 页面识别。
 - 提供 SSRF 防护：阻止本机、私网、保留网段及危险重定向。
-- 支持域名 allow/deny policy。所有直接 HTTP I/O 走唯一一条 `safeHttpFetch`：跨域重定向时不携带敏感头，DNS 通过 `trustEnvProxy=true` 时短路否则在连接时绑定。
-- v2.3.0: DSH 原生 `web_fetch` 公开接口只有 `{ url }`；`authFetch` 配置已被从公开 schema 中移除，不会向模型承诺一个它无法使用的认证 profile。
+- 支持域名 allow/deny policy。抓取与适配器（fetch 管线）的全部出站 HTTP 走唯一一条 `safeHttpFetch`：逐跳校验 URL policy、手动重定向循环、跨域重定向时不携带敏感头、字节上限与流取消、abort 透传。所有适配器都经由它；搜索 Provider 调用的是各自**固定的**服务端点（URL 不由用户输入决定），因此不走该管线。
+- v2.3.0: DSH 原生 `web_fetch` 公开接口只有 `{ url }`，模型无法选择认证 profile，因此不向模型承诺这样的能力。`authFetch` profile 仍存在于设置 schema（`lib/config-schema.js`）并由抓取管线识别，但只有内部调用方能指定它，模型侧无从触及。
 
 ### 工具、核验与运维
 
@@ -35,6 +36,31 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 | `/webdoctor` | 运行 Web 能力诊断。 |
 | `/webdoctor-keys` | 查看、写入、测试或清除 Provider Key。 |
 | `/webcache` | 管理搜索和抓取缓存。 |
+
+插件另外注册两个 **Skill**（与工具同源，但在会话 skill catalog 中按需加载）：
+
+| Skill | 用途 |
+|---|---|
+| `web-access` | 进阶联网研究方法：多 Provider 对比、多查询扇出、缓存内容读取、来源核验。 |
+| `web-access-doctor` | 搜索 / 抓取失败后的排查路径：Provider、凭证、代理、身份。 |
+
+`web_search_ex` 参数：
+
+| 参数 | 说明 |
+|---|---|
+| `query` | 单个查询（与 `queries` 二选一）。 |
+| `queries` | 多查询扇出；每个查询依次走选定路由，结果按 URL 去重合并。 |
+| `routing` | `auto`（默认）/ `aggregate` / 单个 Provider ID / Provider ID 数组。 |
+| `output` | `sources`（默认，返回原始来源）或 `answer`（调用 `ctx.llm` 生成综述）。 |
+| `maxResults` | 1–20，默认 8。 |
+| `recencyFilter` | `day` / `week` / `month` / `year`，Provider 支持时透传。 |
+| `domainFilter` | 限定域名列表，Provider 支持时透传。 |
+
+`source_check` 参数：`claim`（必需）、`subQueries`（覆盖自动拆解）、`maxPages`（最多抓取的页面数）。
+
+`search_content` 参数：`cacheRef`（必需，来自 `source_check` 的 `evidenceSnapshotRefs[].cacheRef`）、`sourceIndex`、`offset` / `limit`（切片）或 `findText` + `findMode`（`exact` / `case-insensitive` / `fuzzy` 定位段落）。注意 `web_search_ex` 与 `web_fetch` **不产生** `cacheRef`。
+
+`web_doctor` 参数：`activeProbe` —— 设为 `true` 时对每个 Provider 的健康端点发起真实探测并记录 `lastPing`（状态与延迟）。默认 `false` 为纯被动检查，不产生网络请求。
 
 GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；按 Profile 配置显式启用。
 
@@ -78,7 +104,7 @@ dsh --profile dev --port 4600
 
 ### Web UI 设置页（推荐）
 
-DSH Trinity 在 DSH Web UI 设置面板的导航条中暴露 **"Provider 密钥"** 分区（`order: 25`，位于通用设置 / 模型 / 插件 / Agent 预设之后）。在该分区可对所有受支持的 Provider（Exa、AnySearch、Gemini、Brave、Tavily 等共 27 个）进行：
+DSH Trinity 在 DSH Web UI 设置面板的导航条中暴露 **"Provider 密钥"** 分区（`order: 25`，位于通用设置 / 模型 / 插件 / Agent 预设之后）。在该分区可对所有**在 UI 中可见的 25 个** Provider（Exa、AnySearch、Gemini、Brave、Tavily 等）进行：
 
 - **Save** —— 在 password input 输入 key 后直接调用 `ctx.credentials.set(ref, value)`；提交后输入框立即清空，状态行短暂显示"已保存（末四位：1234）"作为本次回执。
 - **Test** —— 仅调用 `ctx.credentials.describe(ref)`，不向任何外部 Provider 发送请求，不产生费用。
@@ -124,21 +150,33 @@ web_search_ex(query="DSH Trinity", routing="auto", output="sources")
 # 强制使用 Exa
 web_search_ex(query="最新 DSH 发布说明", routing="exa", output="sources")
 
-# 聚合多 Provider
+# 聚合多 Provider（只扇出到已配置凭据的 Provider）
 web_search_ex(query="2026 年 AI Agent 浏览器", routing="aggregate", output="sources")
+
+# 多查询扇出：两个查询各走一次路由，结果按 URL 去重合并
+web_search_ex(queries=["DSH Trinity 安装", "DSH Trinity 配置"], routing="auto")
+
+# 有序回退 + 时间窗过滤
+web_search_ex(query="Cordis composition", routing=["exa", "tavily"], recencyFilter="month")
+
+# 让插件用 ctx.llm 基于来源生成综述
+web_search_ex(query="DSH profile 与 bundle 的关系", output="answer")
 
 # 核验一个事实性声明
 source_check(claim="DSH Trinity 不会修改 DSH 本体")
+
+# 读取 source_check 快照中的一段内容
+search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 ```
 
 `web_search_ex` 的 `routing` 支持：
 
 | 值 | 行为 |
 |---|---|
-| `auto` | 自动按可用性和配置顺序选择 Provider。 |
-| `aggregate` | 并行调用多个可用 Provider 并合并结果。 |
-| `exa` 等单个 Provider ID | 强制指定一个 Provider；失败即返回失败。 |
-| `["exa", "tavily"]` | 按顺序尝试 Provider。 |
+| `auto` | 按 `auto` 链顺序依次尝试，第一个成功即返回。 |
+| `aggregate` | 并行扇出到**已配置凭据的** Provider，按 URL 去重合并；失败者的错误汇总在 `providerErrors`。 |
+| `exa` 等单个 Provider ID | 强制指定一个 Provider；失败即返回失败，不做跨 Provider 回退。 |
+| `["exa", "tavily"]` | 按数组顺序尝试 Provider。 |
 
 ## DSH 0.1.2-alpha.4 兼容性
 

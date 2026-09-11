@@ -30,6 +30,16 @@ DESIGN.md
 MANUAL.md
 SPEC.md
 ORCHESTRA_PROPOSAL_*.md
-bin/
 e2e/
 frontend/
+
+# bin/ is developer tooling, but package.json#scripts references two of its
+# files and test/contract/contract-closure-23.test.js (CC23-pkg) asserts every
+# script target exists on disk. Ignoring the directory outright made a clean
+# clone fail that contract, which is why CI has been red since 2026-09-04.
+# Ignore the directory's CONTENTS and re-include the tracked targets, so the
+# rest of bin/ stays disk-only. (A `!bin/x.js` rule cannot rescue a file whose
+# parent directory is excluded, hence the `bin/*` form.)
+bin/*
+!bin/sync-bundle.js
+!bin/lint-no-llm-in-providers.js
