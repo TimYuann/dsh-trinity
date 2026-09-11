@@ -1,6 +1,6 @@
 {
   "name": "dsh-trinity",
-  "version": "2.3.0-rc.0",
+  "version": "2.3.0-rc.1",
   "description": "Multi-provider web search, fetch, source checking, and provider operations for DeepSeek Harness.",
   "type": "module",
   "main": "lib/index.js",

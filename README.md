@@ -40,22 +40,28 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ## 安装
 
-### 从 npm 安装到 DSH Profile
+### 安装到 DSH Profile
 
 ```bash
-# 安装到 web profile；也可将 web 替换为 dev 等独立 profile
-dsh plugin --profile web add dsh-trinity@2.3.0-rc.0
+# 2.3.0 线尚未发布到 npm（当前 npm latest = 2.2.3），用本地 tarball 安装。
+# 将 web 替换为 dev 即可先装到独立 Profile 验证。
+dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.1.tgz
 
 # 重启该 profile 的 DSH Web host
 dsh web --port 4599
 ```
+
+> npm 上的最新发布版本仍是 **2.2.3**（`dsh plugin --profile web add dsh-trinity@2.2.3`）。
+> 本文档描述的 2.3.0 行为来自本地 tarball 与源码，**不是** npm 上可安装的版本。
+> 插件加入 Profile 后不会热生效：`dsh` 的 live patch watcher 只监听
+> `cordis.patch.yml`，不监听 `package.json`，所以必须重启该 Profile 才会激活。
 
 安装后，DSH Trinity 会在该 Profile 中：
 
 - 保留原生 `web_search` / `web_fetch` 工具；
 - 将 Search/FETCH provider 分别指定为 `web-access-chain-search` 与 `web-access-chain-fetch`；
 - 禁用会与插件 Search provider 产生歧义的 `web-search-deepseek` bundle；
-- 在 DSH `0.1.2-alpha.4` 的 Web app composition 中显式恢复 `tool-web`，使模型侧 Web 工具可用。
+- 显式恢复 `dsh-web-app` 默认禁用的 `tool-web`，使模型侧 Web 工具可用（该行在 DSH `0.1.5-rc.2` 与 `0.1.2-alpha.4` 上均为必要，见下方验证记录）。
 
 > 推荐先在独立 `dev` Profile 验证，再安装到长期使用的 `web` Profile。
 
