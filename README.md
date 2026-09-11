@@ -45,7 +45,7 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 ```bash
 # 2.3.0 线尚未发布到 npm（当前 npm latest = 2.2.3），用本地 tarball 安装。
 # 将 web 替换为 dev 即可先装到独立 Profile 验证。
-dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.1.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.2.tgz
 
 # 重启该 profile 的 DSH Web host
 dsh web --port 4599
