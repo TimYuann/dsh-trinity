@@ -152,8 +152,8 @@ test('probe: configured-but-unprobed credential reports unknown health, not 0 he
 
 test('probe: an observed pool still reports numeric health', async () => {
   setPoolState('exa', [
-    { credentialRef: 'EXA_API_KEY', state: 'healthy' },
-    { credentialRef: 'EXA_API_KEY_2', state: 'invalid' },
+    { credentialRef: 'EXA_API_KEY', state: 'healthy', fingerprint: 'f1' },
+    { credentialRef: 'EXA_API_KEY_2', state: 'invalid', fingerprint: 'f2' },
   ])
   try {
     const probe = createProbe(makeStubCtx(), null)
@@ -161,6 +161,48 @@ test('probe: an observed pool still reports numeric health', async () => {
     const exa = r.providers.find((p) => p.id === 'exa')
     assert.equal(exa.credentialsSource, 'observed')
     assert.equal(exa.credentials, '2 configured / 1 healthy / 0 cooldown / 1 invalid')
+  } finally {
+    setPoolState('exa', [])
+  }
+})
+
+// ── Regression (defect A): a failed run must not fabricate credentials ─
+//
+// 2026-09-11 incident: after one `web_search_ex(routing="aggregate")`,
+// every keyless provider in the panel turned from "0 configured" into
+// "3 configured / 0 healthy / 0 cooldown / 0 invalid (last: credential)".
+// The failed run had persisted buildPool's three placeholder slots and the
+// summary counted each as a configured credential.
+
+test('probe: a placeholder-only pool from a failed run is still "0 configured"', async () => {
+  setPoolState('brave', [
+    { credentialRef: 'BRAVE_API_KEY', state: 'unknown' },
+    { credentialRef: 'BRAVE_API_KEY_2', state: 'unknown' },
+    { credentialRef: 'BRAVE_API_KEY_3', state: 'unknown' },
+  ])
+  try {
+    const probe = createProbe(makeStubCtx(), null)
+    const r = await probe.run({})
+    const brave = r.providers.find((p) => p.id === 'brave')
+    assert.equal(brave.credentialsSource, 'none', 'placeholders are not observations')
+    assert.equal(brave.credentials, '0 configured')
+  } finally {
+    setPoolState('brave', [])
+  }
+})
+
+test('probe: a partly-resolved pool reports only the resolved slots', async () => {
+  setPoolState('exa', [
+    { credentialRef: 'EXA_API_KEY', state: 'healthy', fingerprint: 'f1' },
+    { credentialRef: 'EXA_API_KEY_2', state: 'unknown' },
+    { credentialRef: 'EXA_API_KEY_3', state: 'unknown' },
+  ])
+  try {
+    const probe = createProbe(makeStubCtx(), null)
+    const r = await probe.run({})
+    const exa = r.providers.find((p) => p.id === 'exa')
+    assert.equal(exa.credentialsSource, 'observed')
+    assert.equal(exa.credentials, '1 configured / 1 healthy / 0 cooldown / 0 invalid')
   } finally {
     setPoolState('exa', [])
   }

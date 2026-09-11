@@ -317,12 +317,41 @@ test('runPool: security throws without retry', async () => {
 })
 
 test('poolSummary counts states', () => {
+  // Realistic entries: a slot that resolved a key carries the fingerprint
+  // buildPool wrote at resolution time (2026-09-12, defect A).
   const pool = [
-    { credentialRef: 'a.1', state: 'healthy' },
-    { credentialRef: 'a.2', state: 'quotaCooldown' },
-    { credentialRef: 'a.3', state: 'invalid' },
-    { credentialRef: 'a.4', state: 'unknown' },
+    { credentialRef: 'a.1', state: 'healthy', fingerprint: 'f1' },
+    { credentialRef: 'a.2', state: 'quotaCooldown', fingerprint: 'f2' },
+    { credentialRef: 'a.3', state: 'invalid', fingerprint: 'f3' },
+    { credentialRef: 'a.4', state: 'unknown', fingerprint: 'f4' },
   ]
   const s = poolSummary(pool)
   assert.deepEqual(s, { configured: 4, healthy: 1, cooldown: 1, invalid: 1, unknown: 1 })
+})
+
+test('poolSummary: placeholder slots are not configured credentials', () => {
+  // buildPool pushes {credentialRef, state:'unknown'} for every slot it
+  // could NOT resolve. A failed run persists that placeholder pool via
+  // setPoolState, and the doctor used to read it back as
+  // "3 configured / 0 healthy" for a provider with no key at all.
+  const pool = [
+    { credentialRef: 'BRAVE_API_KEY', state: 'unknown' },
+    { credentialRef: 'BRAVE_API_KEY_2', state: 'unknown' },
+    { credentialRef: 'BRAVE_API_KEY_3', state: 'unknown' },
+  ]
+  assert.deepEqual(poolSummary(pool), { configured: 0, healthy: 0, cooldown: 0, invalid: 0, unknown: 0 })
+})
+
+test('poolSummary: mixed pool counts only the resolved slots', () => {
+  const pool = [
+    { credentialRef: 'EXA_API_KEY', state: 'healthy', fingerprint: 'f1' },
+    { credentialRef: 'EXA_API_KEY_2', state: 'unknown' },
+    { credentialRef: 'EXA_API_KEY_3', state: 'unknown' },
+  ]
+  assert.deepEqual(poolSummary(pool), { configured: 1, healthy: 1, cooldown: 0, invalid: 0, unknown: 0 })
+})
+
+test('poolSummary: a resolved-but-unmeasured slot is configured and unknown', () => {
+  const pool = [{ credentialRef: 'EXA_API_KEY', state: 'unknown', fingerprint: 'f1' }]
+  assert.deepEqual(poolSummary(pool), { configured: 1, healthy: 0, cooldown: 0, invalid: 0, unknown: 1 })
 })
