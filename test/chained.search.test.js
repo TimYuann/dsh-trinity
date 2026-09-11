@@ -15,11 +15,12 @@ import { toIso8601, isValidIso8601 } from '../lib/iso8601.js'
 
 // v2.3.0: the openai Hosted Search half-implementation was removed
 // (review § P0#3). Registry is now 26 providers (24 + kimi +
-// parallelMcp) and the auto chain is 17.
+// parallelMcp). 2026-09-11: anysearch promoted to AUTO_CHAIN per
+// user decision; auto chain is now 18, explicit-only is 8.
 test('provider registry has exactly 26 providers (24 + kimi + parallelMcp)', () => {
   assert.equal(Object.keys(PROVIDER_REGISTRY).length, 26)
-  assert.equal(ALL_ELIGIBLE_PROVIDERS.length, 17)
-  assert.equal(EXPLICIT_ONLY_PROVIDERS.length, 9) // 7 + kimi + parallelMcp
+  assert.equal(ALL_ELIGIBLE_PROVIDERS.length, 18)
+  assert.equal(EXPLICIT_ONLY_PROVIDERS.length, 8) // 6 + kimi + parallelMcp
 })
 
 test('selectModeFromConfig honours 4 modes', () => {
