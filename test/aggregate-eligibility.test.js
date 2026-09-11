@@ -12,11 +12,14 @@
 //
 // These tests pin the fan-out half of the fix. The reporting half
 // (poolSummary ignoring placeholder slots) is covered in
-// test/credentials/pool.test.js and test/doctor.test.js.
+// test/credentials/pool.test.js and test/doctor.test.js. The last case
+// runs the exact three-step recipe from the handoff (doctor → aggregate →
+// doctor) in one process, because that sequence is what the user saw.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { chainedSearch, getPoolState, setPoolState, poolSummary } from '../lib/providers/search/chained.js'
+import { createProbe } from '../lib/doctor/probe.js'
 
 // ─────────────────────────────────────────────────────────────────────
 // Helpers
@@ -193,6 +196,71 @@ test('aggregate: zero credentialed providers fails fast with a clear reason', as
       },
     )
     assert.deepEqual(stub.calls, [], 'no provider may be contacted when none is configured')
+  } finally {
+    stub.restore()
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// A.5 — the reported recipe, end to end in one process
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * DSH ctx stub shaped like the doctor's (settings / agents / session /
+ * agentDefaultModel) plus a credentials seam that resolves only `refs`.
+ * @param {string[]} refs
+ */
+function makeDshCtx(refs) {
+  const resolvable = new Set(refs)
+  return {
+    session: { id: 'session-defect-a' },
+    get(key) {
+      if (key === 'credentials') {
+        return {
+          async resolve(ref) {
+            return resolvable.has(ref) ? { value: `stub-${ref}`, source: 'test' } : undefined
+          },
+        }
+      }
+      if (key === 'agents') return { currentInitiator: () => ({ sessionId: 'session-defect-a' }) }
+      if (key === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'test', model: 'test-model' }) }
+      if (key === 'settings') return { get: () => null, on: () => () => {} }
+      return null
+    },
+  }
+}
+
+test('A.5: doctor → aggregate → doctor keeps keyless providers at "0 configured"', async () => {
+  // The exact sequence the user ran: check the panel, run one aggregate
+  // search, check the panel again. Keyless providers went from
+  // "0 configured" to "3 configured / 0 healthy / 0 cooldown / 0 invalid".
+  resetPools(['exa', 'brave', 'tavily', 'anysearch'])
+  const stub = stubFetch()
+  try {
+    const dshCtx = makeDshCtx(['EXA_API_KEY'])
+    const probe = createProbe(dshCtx, null)
+    const rowOf = async (id) => (await probe.run({})).providers.find((p) => p.id === id)
+
+    assert.equal((await rowOf('brave')).credentials, '0 configured', 'baseline: brave has no key')
+    assert.equal((await rowOf('tavily')).credentials, '0 configured', 'baseline: tavily has no key')
+
+    const chainedCtx = { ...makeChainedCtx(['EXA_API_KEY']), ctx: dshCtx }
+    const r = await chainedSearch({ query: 'doctor recipe', routing: 'aggregate' }, undefined, chainedCtx)
+    assert.equal(r.sources.length, 1)
+
+    for (const id of ['brave', 'tavily', 'anysearch']) {
+      const row = await rowOf(id)
+      assert.equal(row.credentialsSource, 'none', `${id} was never attempted`)
+      assert.equal(row.credentials, '0 configured', `${id} must not report fabricated credentials`)
+    }
+    // exa did run, so its row is a measurement and may show its real counts.
+    assert.equal((await rowOf('exa')).credentials, '1 configured / 1 healthy / 0 cooldown / 0 invalid')
+    assert.equal(
+      (await probe.run({})).providers.filter((p) => /configured/.test(p.credentials) && !/^0 configured/.test(p.credentials))
+        .map((p) => p.id).join(','),
+      'exa',
+      'only the provider that actually ran may report a non-zero credential row',
+    )
   } finally {
     stub.restore()
   }
