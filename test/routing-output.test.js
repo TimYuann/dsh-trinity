@@ -86,7 +86,9 @@ test('web_search_ex render: prints the serving provider before the sources', () 
     sources: [{ url: 'https://example.com/a', title: 'A' }],
   })
   assert.equal(blocks[0].type, 'text')
-  assert.equal(blocks[0].text, 'provider: aggregate')
+  // Trailing newline is required: the host concatenates blocks verbatim,
+  // so without it the id glues to the first source URL.
+  assert.equal(blocks[0].text, 'provider: aggregate\n')
   const srcIndex = blocks.findIndex((b) => /example\.com/.test(b.text))
   assert.ok(srcIndex > 0, 'provider line precedes the sources')
 })

@@ -98,6 +98,39 @@ test('sanitizeQueries: drops markers, narration, JSON scaffolding and duplicates
   assert.deepEqual(out, ['how does the credential pool rotate keys?'])
 })
 
+test('sanitizeQueries: a reasoning fragment that merely CONTAINS narration is dropped', () => {
+  // First live run of the fix (headless, 2026-09-12) dropped the leading
+  // prose but still emitted this as sub-query 3 — it opens with a
+  // plausible noun phrase, so a prefix-only rule let it through.
+  const out = sanitizeQueries([
+    'distributed shell? Profile bundle patch? Need infer. Could be about',
+    'In dsh, profile\'s bundle patch overrides that line\'s config line by line',
+  ])
+  assert.deepEqual(out, ["In dsh, profile's bundle patch overrides that line's config line by line"])
+})
+
+test('sanitizeQueries: a query that stops mid-sentence is dropped', () => {
+  // DANGLING_TAIL: a real query does not end on a function word. This is
+  // the "Could be about" half of the fragment seen in the live run.
+  assert.deepEqual(sanitizeQueries(['the difference between a bundle and']), [])
+  assert.deepEqual(sanitizeQueries(['what does the patch layer apply to']), [])
+  assert.deepEqual(sanitizeQueries(['could be about']), [])
+  // ...but complete queries survive, including one whose last word merely
+  // looks like a stop word.
+  assert.deepEqual(
+    sanitizeQueries(['how does the credential pool rotate keys?']),
+    ['how does the credential pool rotate keys?'],
+  )
+  assert.deepEqual(sanitizeQueries(['cordis patch layer apply order']), ['cordis patch layer apply order'])
+})
+
+test('sanitizeQueries: does not over-filter (inference engine stays)', () => {
+  assert.deepEqual(
+    sanitizeQueries(['inference engine benchmark results', 'how to infer types in typescript']),
+    ['inference engine benchmark results', 'how to infer types in typescript'],
+  )
+})
+
 test('splitSubQueryLines: an empty completion yields no candidates', () => {
   assert.deepEqual(splitSubQueryLines(''), [])
   assert.deepEqual(splitSubQueryLines(null), [])
