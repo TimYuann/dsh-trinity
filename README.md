@@ -69,16 +69,25 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 ### 安装到 DSH Profile
 
 ```bash
-# 2.3.0 线尚未发布到 npm（当前 npm latest = 2.2.3），用本地 tarball 安装。
+# 2.3.0 线是预发布（release candidate），发布在 npm 的 `next` dist-tag 上，
+# 不在 `latest` 上 —— 所以必须显式写 @next。
 # 将 web 替换为 dev 即可先装到独立 Profile 验证。
-dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.2.tgz
+dsh plugin --profile web add dsh-trinity@next
+
+# 也可以从本地 tarball 或源码目录安装：
+#   dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.2.tgz
+#   dsh plugin --profile web add file:/absolute/path/to/dsh-trinity
 
 # 重启该 profile 的 DSH Web host
 dsh web --port 4599
 ```
 
-> npm 上的最新发布版本仍是 **2.2.3**（`dsh plugin --profile web add dsh-trinity@2.2.3`）。
-> 本文档描述的 2.3.0 行为来自本地 tarball 与源码，**不是** npm 上可安装的版本。
+> **`latest` 仍是 2.2.3。** `dsh plugin --profile web add dsh-trinity`（不带 tag）拿到的是 2.2.x，
+> 与本文档描述的 2.3.0 行为不同。要装 2.3.0 线就用 `@next`。
+>
+> 2.3.0 目前是 release candidate：`v2.3.0-rc.2` 已打 tag，但没有作为稳定版本发布。
+> 只有当 `latest` 前进到 `2.3.0` 之后，不带 tag 的安装才会拿到它。
+>
 > 插件加入 Profile 后不会热生效：`dsh` 的 live patch watcher 只监听
 > `cordis.patch.yml`，不监听 `package.json`，所以必须重启该 Profile 才会激活。
 
