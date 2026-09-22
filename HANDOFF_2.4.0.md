@@ -1,14 +1,98 @@
-# Handoff · dsh-trinity 2.4.0-rc.0 / DSH 0.1.7-alpha.1
+# Handoff · dsh-trinity 2.4.0 / DSH 0.1.7-alpha.1
 
-> Status: implementation complete; static/runtime/GUI/commands pass, but MiniMax M3 blocks the final Agent/tool path before any tool call.
+> Status: **release candidate cleared.** The full end-to-end Agent → tool → provider
+> matrix passes on the packed artifact. Two real defects were found and fixed after the
+> previous hand-off (`2.4.0-rc.0`); both had been mis-attributed to credentials.
 >
-> Last updated: 2026-09-22
+> Last updated: 2026-09-23
 >
 > Repository: `/Users/yuantian/Developer/dsh-web-search-chained`
 >
 > Branch: `release/2.3.0`
 >
 > Baseline HEAD: `2762f050fad4f4d62ccf2a0c0b7eea6703871c0c` (`v2.3.0-rc.2`)
+>
+> Release artifact: `dsh-trinity-2.4.0.tgz`
+> SHA-256 `ef5fd786497589ddf16032ec9f900de27be0edbb27993be5529cc3fe8c6b754c`
+
+## 0. What changed since 2.4.0-rc.0
+
+`2.4.0-rc.0` was complete on the 0.1.7 contract, but its one open item ("MiniMax M3
+blocks the Agent/tool path") turned out to be a **symptom of a host-level HTTP defect**
+that also silently broke Exa search and `web_fetch`. All three share one root cause.
+
+### 0.1 Root cause (host-side, reproduced, not this plugin)
+
+The DSH `0.1.7-alpha.1` host process returns `status=200` responses with **every
+response header stripped** while the body is **still content-encoded**:
+
+```text
+POST https://api.exa.ai/search              -> 200, headers={}, body = gzip    (1f 8b ...)
+POST https://api.minimaxi.com/anthropic/... -> 200, headers={}, body = brotli  (no magic)
+GET  https://example.com/                   -> 200, headers={}, body = brotli
+```
+
+undici decompresses from `content-encoding`; with the header gone it does not, so the
+consumer receives compressed bytes. Not reproducible outside the host: `curl`, Node's
+global `fetch` (undici 6.24.1) and DSH's own bundled undici 8.11.0 (`fetch` **and**
+`request`, with and without `ProxyAgent`) all return correct headers and decoded bodies.
+
+### 0.2 Three symptoms, one cause
+
+| Symptom | Chain |
+|---|---|
+| Exa search failed | gzip bytes reached `response.json()` → `SyntaxError` → `classifyError` matched nothing → class `unknown` |
+| `web_fetch` failed | `content-type` was also gone → `classifyContentType('')` → `binary` → `UNSUPPORTED_CONTENT_TYPE` |
+| MiniMax M3 failed | brotli SSE bytes → adapter saw zero events → `Anthropic stream ended without a stop reason` (usage 0/0/0) |
+
+### 0.3 Why it looked like a credential problem
+
+A credential slot with no resolved key always throws `MISSING_API_KEY`, i.e. class
+`credential`. After the real slot-1 failure the pool walked its **empty** slots 2/3, and
+the chain reported the **last** attempt — so a valid key surfaced as
+`provider exa failed: credential`. Two keys were wrongly suspected; both are valid.
+
+### 0.4 Fixes in 2.4.0
+
+- **`lib/util/decode-body.js`** (new) — decode by **magic bytes**: gzip / zstd /
+  zlib-deflate always; brotli and raw-deflate only for text readers, only when the input
+  is not already valid UTF-8, and only when the output is valid UTF-8, so binary
+  payloads are never reinterpreted.
+- **26 search providers** now read through `readResponseJson` / `readResponseText`.
+- **`safeHttpFetch`** decodes before dispatch; when `content-type` is absent the
+  already-decoded bytes are sniffed (PDF / HTML / XML / RSS / JSON). A declared type is
+  always believed.
+- **`lib/providers/search/chained.js`** — the single-provider branch reports the first
+  non-`credential` attempt, so empty-slot noise can no longer mask the real failure.
+  `credential` is still reported when no slot has a key at all.
+- **`lib/gemini-model.js`** (new) — default model moved from the retired
+  `gemini-2.5-flash` (HTTP 404) to Google's tracking alias `gemini-flash-latest`.
+
+### 0.5 Verification of 2.4.0 (all on the packed tarball)
+
+- `pnpm test` **395/395** (374 + 21 new regression tests); all static gates pass;
+  `git diff --check` clean.
+- Tarball installed via `dsh plugin --profile dev-trinity add <tgz>`; the installed
+  bundle digest is **byte-identical** to the tarball contents.
+- Cold start, composition (`web-access-chain-search/fetch`, `web-search-deepseek`
+  disabled, `tool-web` enabled), boot manifest + client artifact, Plugins control centre
+  (3 tabs, 0 password inputs while collapsed), `/webdoctor --active` with
+  `args=" --active"` and Exa `ping=healthy`.
+- **Live matrix 4/4**: `web_search_ex`→exa, `web_search_ex`→anysearch, `web_fetch`
+  (HTML/RSS/PDF), and `source_check`→`search_content` (verdict `supported`, IANA
+  evidence, cacheRef snapshot read back successfully).
+
+### 0.6 Credential state at release time
+
+Stored in `~/.dsh/.credentials.yaml` (DSH_HOME-level, shared across profiles), canonical
+`<PROVIDER>_API_KEY` refs — the shape `lib/credentials/resolve.js` expects:
+
+`EXA_API_KEY`, `ANYSEARCH_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`,
+`MINIMAX_CN_API_KEY`, `COMMAND_API_KEY`, `STEPFUN_API_KEY`.
+
+`DEEPSEEK_API_KEY` and `GEMINI_API_KEY` were both previously *outside* the store (only in
+`~/.zshrc` / supplied directly) and were imported during this pass. The other 23 search
+providers have no key anywhere on this machine and correctly show "待配置".
 
 ## 1. Outcome requested
 
@@ -36,14 +120,14 @@ history. Another session owns `dev-orchestra:4600`.
 ## 2. Current repository state
 
 The canonical implementation state is the local upgrade commit containing this
-document; use `git log --oneline -1 -- HANDOFF_2.4.0-rc.0.md` to resolve it after
+document; use `git log --oneline -1 -- HANDOFF_2.4.0.md` to resolve it after
 checkout. Before that commit, pre-existing command changes were user-owned and
 were explicitly accepted into the upgrade scope.
 
 Files included in the upgrade commit:
 
 ```text
-HANDOFF_2.4.0-rc.0.md
+HANDOFF_2.4.0.md
 README.md
 lib/client.js
 lib/commands/invocation.js
@@ -74,7 +158,7 @@ Local research artifact:
 
 ### 3.1 Version and target cohort
 
-- Plugin candidate version: `2.4.0-rc.0`
+- Released version: `2.4.0`
   - `package.json`
   - `lib/index.js`
 - `@deepseek-ai/schemastery` aligned from `3.18.1` to `3.18.3`
@@ -225,7 +309,7 @@ Passed:
 Artifact:
 
 ```text
-/tmp/dsh-trinity-validation-final/dsh-trinity-2.4.0-rc.0.tgz
+/tmp/dsh-trinity-release/dsh-trinity-2.4.0.tgz
 SHA-256 a7029612923a22d838591f855572b759dfafdca20aade98240d0a94ef436b171
 ```
 
@@ -239,7 +323,7 @@ Report: `/tmp/dsh-trinity-sol-xhigh-runtime.md`
 
 Passed on `dev-trinity:4601`:
 
-- profile install resolves `dsh-trinity@2.4.0-rc.0`;
+- profile install resolves `dsh-trinity@2.4.0`;
 - composition selects `web-access-chain-search/fetch`;
 - `web-search-deepseek` disabled;
 - `tool-web` enabled;
@@ -398,29 +482,36 @@ prioritization were completed.
 
 ## 7. Known residuals / next actions
 
-1. The only required test blocker is outside this plugin: diagnose the
-   MiniMax-M3 Anthropic-compatible stream so it emits a terminal stop reason.
-   After repair, rerun the same Ego Lite matrix on MiniMax M3 only; do not use a
-   different model to declare this gate passed.
-2. The plugin candidate can be reviewed/installed for its verified 0.1.7
-   composition, GUI, commands, package, and static behavior, but release notes
-   must preserve the model/tool-path limitation until rerun.
-3. Rollback:
-   - source rollback is `git revert <upgrade-commit>` after the local commit;
+1. **Fixed in 2.4.0** — the former blocker (MiniMax M3 aborting before any tool call,
+   and the same cause breaking Exa search and `web_fetch`) is resolved plugin-side; see
+   §0. The live matrix now passes on the packed artifact.
+2. **MiniMax M3 itself is still unusable** until the host HTTP defect (§0.1) is fixed:
+   the LLM path runs inside the host, not through this plugin, so the plugin's decoding
+   layer cannot reach it. Report to the DSH host/orchestra track with the signature
+   `status=200 + empty headers + still-compressed body`, which is not reproducible with
+   curl or with any undici version outside the host process.
+3. **Gemini is quota-blocked, not misconfigured.** The key authenticates and lists 44
+   models, but every grounding-capable model returns HTTP 429 ("exceeded your current
+   quota"). Needs billing/grounding quota on the Google project. The default model was
+   nevertheless fixed (it had been retired upstream, returning 404).
+4. Rollback:
+   - source rollback is `git revert <release-commit>`;
    - profile rollback is limited to `dev-trinity` and the prior package artifact;
    - never reset/clean unrelated work or restore global legacy settings.
-4. Remaining design issue not fixed here: Host subprocess support exists in
-   `lib/util/subprocess.js`, but several callsites pass `undefined` and therefore
-   always use Node child-process fallback. Fix only after a separate target-policy
+5. Remaining design issue not fixed here: Host subprocess support exists in
+   `lib/util/subprocess.js`, but several callsites pass `undefined` and therefore always
+   use the Node child-process fallback. Fix only after a separate target-policy
    investigation.
-5. npm two-version materialization is blocked because
-   `@deepseek-ai/dsh@0.1.5-rc.2` references unpublished
-   `@deepseek-ai/dsh-client-ui-sidebar-documentpreview@^0.1.5-rc.3`.
-   Full log: `/tmp/dsh-trinity-audit-full.log`. The tag/source audit remains the
-   authoritative corridor evidence.
-6. `docs/dsh-0.1.7-alpha.1-upgrade-and-capability-audit.md` is ignored by the
-   current repository policy. Preserve it locally or deliberately change docs
-   tracking in a separate decision; do not assume it is included in the commit.
+6. npm two-version materialization is blocked because `@deepseek-ai/dsh@0.1.5-rc.2`
+   references unpublished
+   `@deepseek-ai/dsh-client-ui-sidebar-documentpreview@^0.1.5-rc.3`. Full log:
+   `/tmp/dsh-trinity-audit-full.log`. The tag/source audit remains the authoritative
+   corridor evidence.
+7. `docs/dsh-0.1.7-alpha.1-upgrade-and-capability-audit.md` is ignored by the current
+   repository policy. Preserve it locally or deliberately change docs tracking in a
+   separate decision; do not assume it is included in the commit.
+8. `.pi/` is untracked and **not** covered by `.gitignore`. Never `git add -A` in this
+   repository — stage files explicitly or `.pi/` runtime state enters the commit.
 
 ## 8. Important evidence paths
 
@@ -437,9 +528,9 @@ prioritization were completed.
 /tmp/dsh-trinity-minimax-session-summary-redacted.json
 /tmp/dsh-trinity-minimax-retest-4601-sanitized.log
 /tmp/dsh-trinity-minimax-m3-blocked.png
-/tmp/dsh-trinity-validation-final/dsh-trinity-2.4.0-rc.0.tgz
+/tmp/dsh-trinity-release/dsh-trinity-2.4.0.tgz
 /tmp/dsh-trinity-audit-full.log
-HANDOFF_2.4.0-rc.0.md
+HANDOFF_2.4.0.md
 ```
 
 Subagent research reports:

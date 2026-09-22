@@ -68,32 +68,38 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
-当前源码候选版本是 `2.4.0-rc.0`，面向 DSH `0.1.7-alpha.1`。在发布新的
-npm prerelease 之前，请使用本地 tarball 或源码目录，不要把旧 `@next`
-当作本候选版本：
+`2.4.0` 已发布到 npm，面向 DSH `0.1.7-alpha.1`（`latest` dist-tag）：
 
 ```bash
-# 在插件仓库中生成可审计 tarball
-pnpm pack --pack-destination /tmp/dsh-trinity-build
+dsh plugin --profile web add dsh-trinity
+```
 
-# 首次验证应使用独立 Profile；名称可以自行替换
+也可以在 DSH Web 的 **Plugins → 添加插件** 里直接填写 `dsh-trinity`（或
+`dsh-trinity@2.4.0`、本仓库的 GitHub 地址、本地目录路径）。
+
+首次安装建议先落在独立 Profile，确认无误后再装到长期使用的 `web`：
+
+```bash
+# 从 web 模板派生一个独立测试 Profile
 dsh --profile dev-trinity --from-default-profile web --dump-config
-dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.0-rc.0.tgz
+dsh plugin --profile dev-trinity add dsh-trinity
 
 # 冷启动验证
 dsh --profile dev-trinity --no-open --port 4601
 ```
 
-也可以从源码目录安装：
+也可以从固定版本的 tarball 安装（便于审计与回滚）：
 
 ```bash
-dsh plugin --profile dev-trinity add file:/absolute/path/to/dsh-trinity
+pnpm pack --pack-destination /tmp/dsh-trinity-build
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.0.tgz
 ```
 
-> 已发布的 `2.3.0-rc.2` 仍可通过旧 prerelease 轨道取得，但不包含本文所述的
-> DSH 0.1.7 Plugins 控制中心和 command input 修复。安装包之后应重新启动目标
-> Profile，并用 `dsh --profile <name> --dump-config` 核对 effective config；
-> “包安装成功”本身不等于插件已挂载或已通过运行验证。
+> 新版本进入 Profile 后，用 `dsh --profile <name> --dump-config` 核对 effective
+> config；“包安装成功”本身不等于插件已挂载或已通过运行验证。
+>
+> `2.3.0-rc.2` 及更早版本不包含本文所述的 DSH 0.1.7 Plugins 控制中心、
+> command input 修复，以及 2.4.0 的响应解压兼容修复。
 
 安装后，DSH Trinity 会在该 Profile 中：
 
@@ -203,9 +209,9 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 
 ## DSH 0.1.7-alpha.1 兼容性
 
-`2.4.0-rc.0` 已在独立 `dev-trinity` Profile 与 DSH `0.1.7-alpha.1` 上验证：
+`2.4.0` 已在独立 `dev-trinity` Profile 与 DSH `0.1.7-alpha.1` 上验证：
 
-- 374 项测试和全部静态 gate 通过；
+- 395 项测试和全部静态 gate 通过；
 - 打包产物可安装，且不包含 tests、docs、`.pi` 或 `lib/_deferred`；
 - effective config 正确挂载 `web-access-chain`，Search/FETCH 分别指向
   `web-access-chain-search` / `web-access-chain-fetch`；
@@ -216,14 +222,40 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 - `/webdoctor --active`、`/webdoctor-keys status/test` 和 `/webcache list`
   均通过真实 Web command plane，参数不会再降级为普通聊天；
 - `/webdoctor-keys` 继续设置 `recordInput:false`，credential tail 不进入
-  durable `command/run` 事件。
+  durable `command/run` 事件；
+- 真实 Agent → tool → provider 链路已端到端跑通（见下）。
 
-本轮按要求只使用 `minimax-cn/MiniMax-M3` 做最终 Agent/tool 路径测试；该模型
-通道连续两次在任何 `tool/call` 前失败，错误为
-`Anthropic stream ended without a stop reason`。因此不能声称 Exa/AnySearch 的
-真实 search tool、fetch adapters 或 `source_check → search_content` 已在该模型下
-端到端通过。已确认 Exa credential 配置存在，`/webdoctor --active` 的 Exa endpoint
-probe 为 healthy；这仍不等价于一次完整搜索。
+### 端到端工具链路（真实模型 + 真实 provider）
+
+以下矩阵已在真实 Web 会话中由模型实际发起并通过：`web_search_ex` 打 Exa 与
+AnySearch、`web_fetch` 抓 HTML / RSS / PDF、以及 `source_check → search_content`
+（返回 `supported` 判定并附官方证据）。Exa endpoint 主动探测为 healthy。
+
+### 响应解压兼容修复（2.4.0）
+
+DSH `0.1.7-alpha.1` 的宿主进程会在返回 `status=200` 的同时**丢掉全部响应头**，
+而 body 仍保持压缩态（Exa 为 gzip，example.com 与 MiniMax 为 brotli）。undici
+依据 `content-encoding` 解压，头一旦缺失就不再解压，由此引发了三个表面症状：
+
+- Exa 搜索失败：压缩字节进入 `response.json()` 抛 `SyntaxError`；
+- `web_fetch` 失败：`content-type` 缺失被判为 `binary`；
+- 报错被误导成 `credential`：空凭据槽位先抛 `MISSING_API_KEY`，而链上只报最后
+  一次尝试的类别，于是**有效的 key 被报成凭据错误**。
+
+`2.4.0` 新增 `lib/util/decode-body.js`：按**魔数**还原 gzip / zstd / deflate；
+对无魔数的 brotli / raw-deflate，仅在“正文阅读器 + 输入非合法 UTF-8 + 输出为
+合法 UTF-8”时才尝试，二进制内容永不被误改。同时 `web_fetch` 在 `content-type`
+缺失时按正文嗅探（PDF / HTML / XML / JSON），并且链上改为汇报**真实失败类别**，
+不再用空槽噪声覆盖。
+
+### 已知外部限制（非本插件缺陷）
+
+- **MiniMax M3**：同一宿主缺陷会让 Anthropic 兼容流以压缩态返回，适配器收不到
+  事件并报 `Anthropic stream ended without a stop reason`。修复点在宿主 HTTP 层；
+  插件侧已做上述防御，但该模型通道仍需宿主修复。
+- **Gemini**：provider 与 key 均正常，但 grounding 配额用尽（HTTP 429）；默认模型
+  已从被下架的 `gemini-2.5-flash` 改为 Google 追踪别名 `gemini-flash-latest`。
+- 未配置 key 的 Provider 会显示“待配置”，属预期状态。
 
 旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中；当前安装与兼容结论以上述
 0.1.7-alpha.1 结果为准。
