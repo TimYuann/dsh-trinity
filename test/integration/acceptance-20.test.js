@@ -382,12 +382,12 @@ test('AC #20: source_check Tool has full 6-step algorithm + immutable snapshot r
   assert.ok(evShape.passages)
 })
 
-// ── meta: v2.2.3 package metadata ────────────────────────────────────
-test('R1 metadata: package name is dsh-trinity v2.3.0-rc.2', () => {
+// ── meta: package metadata ───────────────────────────────────────────
+test('R1 metadata: package and runtime versions stay in lockstep', () => {
   assert.equal(PKG.name, 'dsh-trinity')
-  assert.equal(PKG.version, '2.3.0-rc.2')
+  assert.equal(PKG.version, '2.4.0-rc.0')
   assert.equal(name, 'web-access-chain')
-  assert.equal(version, '2.3.0-rc.2')
+  assert.equal(version, PKG.version)
 })
 
 // ── R2 follow-up: regression coverage for the reviewer's findings ─────

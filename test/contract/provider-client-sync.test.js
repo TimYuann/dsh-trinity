@@ -33,13 +33,19 @@ test('CC23-R4: client.js BEGIN/END block exists and parses', () => {
   assert.ok(begin >= 0, 'BEGIN marker present')
   assert.ok(end > begin, 'END marker present and after BEGIN')
   const inner = src.slice(begin + BEGIN.length, end)
-  // Each entry is `{ id: "<id>", env: "<ENV_NAME>" },`
-  const rows = [...inner.matchAll(/\{\s*id:\s*"([^"]+)",\s*env:\s*"([^"]+)"\s*\}/g)]
-  assert.ok(rows.length >= 20, `expected ≥20 provider rows, got ${rows.length}`)
-  for (const [, id] of rows) {
-    // Every id must round-trip through provider-metadata.
+  // Each generated entry carries both the routing classification and the
+  // credential-editor facts needed by the 0.1.7 Plugins control center.
+  const rows = [...inner.matchAll(/\{\s*id:\s*"([^"]+)",\s*label:\s*"([^"]+)",\s*env:\s*"([^"]*)",\s*mode:\s*"([^"]+)",\s*autoEligible:\s*(true|false),\s*showInCredentialUi:\s*(true|false)\s*\}/g)]
+  assert.ok(rows.length >= 26, `expected the complete routing inventory, got ${rows.length}`)
+  for (const [, id, label, env, mode] of rows) {
     assert.match(id, /^[a-zA-Z][a-zA-Z0-9]*$/, `provider id "${id}" matches slug pattern`)
+    assert.ok(label.trim().length > 0, `provider "${id}" has a human display label`)
+    assert.ok(['api-key', 'host', 'none'].includes(mode), `provider "${id}" has a supported credential mode`)
+    if (mode === 'none') assert.equal(env, '', `keyless provider "${id}" has no credential ref`)
+    else assert.match(env, /^[A-Z_][A-Z0-9_]*$/, `provider "${id}" has a POSIX credential ref`)
   }
+  assert.ok(rows.some((row) => row[1] === 'duckduckgo' && row[4] === 'none' && row[6] === 'false'),
+    'keyless DuckDuckGo stays in the routing view but out of the credential editor')
 })
 
 test('CC23-R4b: openai is NOT in client.js (Hosted Search half-impl removed)', () => {
@@ -53,14 +59,14 @@ test('CC23-R4b: openai is NOT in client.js (Hosted Search half-impl removed)', (
 
 test('CC23-R4c: firecrawl + parallelMcp env are the canonical names (no legacy aliases in user-facing UI)', () => {
   const src = readFileSync(CLIENT, 'utf8')
-  assert.match(src, /id: "firecrawl", env: "FIRECRAWL_API_KEY"/,
+  assert.match(src, /id: "firecrawl", label: "Firecrawl", env: "FIRECRAWL_API_KEY"/,
     'firecrawl must point at the canonical FIRECRAWL_API_KEY, not the legacy FIRECRAWL_KEY alias')
-  assert.match(src, /id: "parallelMcp", env: "PARALLEL_MCP_API_KEY"/,
+  assert.match(src, /id: "parallelMcp", label: "Parallel MCP", env: "PARALLEL_MCP_API_KEY"/,
     'parallelMcp must point at the canonical PARALLEL_MCP_API_KEY, not the legacy alias')
   // Legacy aliases are non-fatal elsewhere (resolve.js still honours them
   // at pool-resolve time) but must not be the UI-written name.
-  assert.equal(/id: "firecrawl", env: "FIRECRAWL_KEY"/.test(src), false)
-  assert.equal(/id: "parallelMcp", env: "PARALLELMCP_API_KEY"/.test(src), false)
+  assert.equal(/id: "firecrawl"[^\n]+env: "FIRECRAWL_KEY"/.test(src), false)
+  assert.equal(/id: "parallelMcp"[^\n]+env: "PARALLELMCP_API_KEY"/.test(src), false)
 })
 
 test('CC23-R4d: scripts/sync-provider-client.mjs --check exits 0 against the current tree', () => {

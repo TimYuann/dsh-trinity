@@ -68,65 +68,79 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
+当前源码候选版本是 `2.4.0-rc.0`，面向 DSH `0.1.7-alpha.1`。在发布新的
+npm prerelease 之前，请使用本地 tarball 或源码目录，不要把旧 `@next`
+当作本候选版本：
+
 ```bash
-# 2.3.0 线是预发布（release candidate），发布在 npm 的 `next` dist-tag 上，
-# 不在 `latest` 上 —— 所以必须显式写 @next。
-# 将 web 替换为 dev 即可先装到独立 Profile 验证。
-dsh plugin --profile web add dsh-trinity@next
+# 在插件仓库中生成可审计 tarball
+pnpm pack --pack-destination /tmp/dsh-trinity-build
 
-# 也可以从本地 tarball 或源码目录安装：
-#   dsh plugin --profile web add /absolute/path/to/dsh-trinity-2.3.0-rc.2.tgz
-#   dsh plugin --profile web add file:/absolute/path/to/dsh-trinity
+# 首次验证应使用独立 Profile；名称可以自行替换
+dsh --profile dev-trinity --from-default-profile web --dump-config
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.0-rc.0.tgz
 
-# 重启该 profile 的 DSH Web host
-dsh web --port 4599
+# 冷启动验证
+dsh --profile dev-trinity --no-open --port 4601
 ```
 
-> **`latest` 仍是 2.2.3。** `dsh plugin --profile web add dsh-trinity`（不带 tag）拿到的是 2.2.x，
-> 与本文档描述的 2.3.0 行为不同。要装 2.3.0 线就用 `@next`。
->
-> 2.3.0 目前是 release candidate：`v2.3.0-rc.2` 已打 tag，但没有作为稳定版本发布。
-> 只有当 `latest` 前进到 `2.3.0` 之后，不带 tag 的安装才会拿到它。
->
-> 插件加入 Profile 后不会热生效：`dsh` 的 live patch watcher 只监听
-> `cordis.patch.yml`，不监听 `package.json`，所以必须重启该 Profile 才会激活。
+也可以从源码目录安装：
+
+```bash
+dsh plugin --profile dev-trinity add file:/absolute/path/to/dsh-trinity
+```
+
+> 已发布的 `2.3.0-rc.2` 仍可通过旧 prerelease 轨道取得，但不包含本文所述的
+> DSH 0.1.7 Plugins 控制中心和 command input 修复。安装包之后应重新启动目标
+> Profile，并用 `dsh --profile <name> --dump-config` 核对 effective config；
+> “包安装成功”本身不等于插件已挂载或已通过运行验证。
 
 安装后，DSH Trinity 会在该 Profile 中：
 
 - 保留原生 `web_search` / `web_fetch` 工具；
 - 将 Search/FETCH provider 分别指定为 `web-access-chain-search` 与 `web-access-chain-fetch`；
 - 禁用会与插件 Search provider 产生歧义的 `web-search-deepseek` bundle；
-- 显式恢复 `dsh-web-app` 默认禁用的 `tool-web`，使模型侧 Web 工具可用（该行在 DSH `0.1.5-rc.2` 与 `0.1.2-alpha.4` 上均为必要，见下方验证记录）。
+- 显式恢复 `dsh-web-app` 默认禁用的 `tool-web`，使模型侧 Web 工具可用。
 
-> 推荐先在独立 `dev` Profile 验证，再安装到长期使用的 `web` Profile。
+> 推荐先在独立测试 Profile 验证，再安装到长期使用的 `web` Profile；不要用
+> 测试 Profile 覆盖已有 `dev` / `web` 的配置或历史会话。
 
 ### 本地开发安装
 
 ```bash
-dsh plugin --profile dev add file:/absolute/path/to/dsh-trinity
-dsh --profile dev --port 4600
+dsh --profile dev-trinity --from-default-profile web --dump-config
+dsh plugin --profile dev-trinity add file:/absolute/path/to/dsh-trinity
+dsh --profile dev-trinity --no-open --port 4601
 ```
 
 ## 配置 Provider Key
 
 插件使用 DSH 原生 `ctx.credentials` credential store，不创建插件私有 `.env` 文件。
 
-### Web UI 设置页（推荐）
+### Web UI 插件控制中心（推荐）
 
-DSH Trinity 在 DSH Web UI 设置面板的导航条中暴露 **"Provider 密钥"** 分区（`order: 25`，位于通用设置 / 模型 / 插件 / Agent 预设之后）。在该分区可对所有**在 UI 中可见的 25 个** Provider（Exa、AnySearch、Gemini、Brave、Tavily 等）进行：
+在 DSH `0.1.7-alpha.1` 中，DSH Trinity 使用官方 Plugins 页的
+`plugins.row.config` 接入面。打开 **Plugins → dsh-trinity →
+web-access-chain → Configure**，即可进入插件控制中心：
 
-- **Save** —— 在 password input 输入 key 后直接调用 `ctx.credentials.set(ref, value)`；提交后输入框立即清空，状态行短暂显示"已保存（末四位：1234）"作为本次回执。
-- **Test** —— 仅调用 `ctx.credentials.describe(ref)`，不向任何外部 Provider 发送请求，不产生费用。
-- **Clear** —— 二次确认后调用 `ctx.credentials.unset(ref)`，刷新状态。
+- **Providers** —— 按自托管、自动路由、仅显式调用分组；支持搜索、已配置/待配置筛选和按需展开编辑，避免同时渲染 25 个密钥输入框。
+- **Routing** —— 展示完整 Provider 路由归属，包括不需要密钥的 DuckDuckGo；这里说明参与资格，不会暗中发起搜索。
+- **Diagnostics** —— 汇总已配置、待配置和可写凭据数；刷新只调用 `ctx.credentials.describe()`，不会访问第三方 Provider，也不会产生费用。需要真实网络探测时使用 `/webdoctor --active`。
+
+在 Provider 编辑器中：
+
+- **Save** 通过 `ctx.remote.credentials.set(ref, value)` 写入 DSH credential store；输入框提交后立即清空。
+- **Refresh status** 通过 `describe(ref)` 更新 configured/source/writable 元数据。旧 UI 的“Test”实际从未访问 Provider，现已改名避免误导。
+- **Clear** 二次确认后通过 `unset(ref)` 删除已存值。
 
 安全约束：
 
-- 完整 key 永远不进入 chat composer、session log、host log、settings.yaml、模型 prompt、tool argument、console log 或 telemetry payload。
-- `last4` 是在用户点击 Save 的瞬间**在浏览器**根据用户输入计算出的，**仅在 React 组件 state 中短暂存在**，刷新页面、关闭弹窗或 context 停止后即被丢弃；host 永远不返回完整 key，也永远不在 `describe` 响应中回显后四位。
-- 设置页的 `web-access-chain` settings YAML **只管理非敏感配置**（routing、timeout、Provider 开关、fetch policy 等），不包含任何 Provider key。
-- 跨域、未认证或非 loopback 访问均被 DSH 自身 trusted-host fence 拒绝；本插件不引入新 HTTP 路由。
+- 完整 key 永远不进入 chat composer、session log、host log、settings YAML、模型 prompt、tool argument、console log 或 telemetry payload。
+- `last4` 只在用户点击 Save 时由浏览器从本次输入计算，并仅存在于当前 React state；刷新页面、离开插件页或 context 停止后即被丢弃。Host 的 `describe()` 永不返回完整值或后四位。
+- `web-access-chain` 的普通配置只管理 routing、timeout、Provider 开关和 fetch policy，不包含 Provider key。
+- 控制中心复用 DSH 的 Plugins 页面与 credentials Remote，不新增私有 HTTP 路由，也不接管登录或 Cookie。
 
-**禁止在聊天框粘贴 key。** 聊天路径会把消息内容写入 session JSONL，DSH Trinity 与 DSH 都无法清理。始终使用 Web UI 设置页或 `/webdoctor-keys` 命令。
+**禁止在聊天框粘贴 key。** 聊天路径会把消息内容写入 session JSONL，DSH Trinity 与 DSH 都无法清理。始终使用插件控制中心或 `/webdoctor-keys` 命令。
 
 ### 命令行 fallback：`/webdoctor-keys`
 
@@ -187,22 +201,32 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 | `exa` 等单个 Provider ID | 强制指定一个 Provider；失败即返回失败，不做跨 Provider 回退。 |
 | `["exa", "tavily"]` | 按数组顺序尝试 Provider。 |
 
-## DSH 0.1.2-alpha.4 兼容性
+## DSH 0.1.7-alpha.1 兼容性
 
-DSH Trinity 已在真实 `dev` Profile 与 DSH `0.1.2-alpha.4` 上验证：
+`2.4.0-rc.0` 已在独立 `dev-trinity` Profile 与 DSH `0.1.7-alpha.1` 上验证：
 
-- `tool-web` 在 `dsh-web-app` 默认禁用时被插件 composition 显式恢复；
-- `tool-web.config.fetch` 使用 DSH base 默认值；
-- `web_search` / `web_fetch` 能发现并使用插件注册的 provider；
-- `web-search-deepseek` 仅在启用本插件的 Profile 中被禁用；
-- 真实 `ctx.web.fetch({ url: "https://example.com" })` 已通过 `web-access-chain-fetch` 返回成功结果。
+- 374 项测试和全部静态 gate 通过；
+- 打包产物可安装，且不包含 tests、docs、`.pi` 或 `lib/_deferred`；
+- effective config 正确挂载 `web-access-chain`，Search/FETCH 分别指向
+  `web-access-chain-search` / `web-access-chain-fetch`；
+- `web-search-deepseek` 被禁用，`tool-web` 被恢复启用；
+- Host boot manifest 正确广告并加载 `dsh-trinity` client artifact；
+- Plugins → dsh-trinity → web-access-chain → Configure 能打开新的控制中心，
+  桌面和窄屏均无水平溢出；
+- `/webdoctor --active`、`/webdoctor-keys status/test` 和 `/webcache list`
+  均通过真实 Web command plane，参数不会再降级为普通聊天；
+- `/webdoctor-keys` 继续设置 `recordInput:false`，credential tail 不进入
+  durable `command/run` 事件。
 
-> **2026-09-11 补充**：实测兼容 DSH 0.1.5-rc.2；`tool-web` patch 在 0.1.5-rc.2 下仍生效（实测 `dsh-web-app@0.1.5-rc.2` 的 cordis.patch.yml 仍带 `disabled: true`，本行 `disabled: false` 是必要的；该行在 alpha.4 与 rc.x 上同样正确）。其余 host 接触面（`ctx.llm` / `agentDefaultModel` / `slots.settings.section` 等）经核对未变更。
+本轮按要求只使用 `minimax-cn/MiniMax-M3` 做最终 Agent/tool 路径测试；该模型
+通道连续两次在任何 `tool/call` 前失败，错误为
+`Anthropic stream ended without a stop reason`。因此不能声称 Exa/AnySearch 的
+真实 search tool、fetch adapters 或 `source_check → search_content` 已在该模型下
+端到端通过。已确认 Exa credential 配置存在，`/webdoctor --active` 的 Exa endpoint
+probe 为 healthy；这仍不等价于一次完整搜索。
 
-> v2.3.0: `web-access-chain-search` 与 `web-access-chain-fetch` 的
-> namespaced provider ID 已经成为稳定 API。任何基于 `searchProvider`
-> 之外的 monkey-patching 都已不再需要；迁移说明见
-> `BASELINE_v2.3.0.md` 与本仓库的 release notes。
+旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中；当前安装与兼容结论以上述
+0.1.7-alpha.1 结果为准。
 
 ## 安全边界
 

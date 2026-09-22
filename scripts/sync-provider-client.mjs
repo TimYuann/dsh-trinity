@@ -13,8 +13,8 @@
 // The block lives between `// BEGIN GENERATED TRINITY PROVIDERS` and
 // `// END GENERATED TRINITY PROVIDERS` lines. The rewrite PRESERVES
 // every byte outside those markers (including explanatory comments);
-// only the `{ id, env }` rows between `var PROVIDERS = [` and the
-// closing `];` are recomputed from provider-metadata.
+// only the generated provider rows between `var PROVIDERS = [` and
+// the closing `];` are recomputed from provider-metadata.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -37,15 +37,16 @@ const { PROVIDER_METADATA } = await import('../lib/providers/provider-metadata.j
 // The expected inner shape (matching lib/client.js v2.3.0+):
 //
 //     var PROVIDERS = [
-//       { id: "alpha",  env: "ALPHA_API_KEY" },
-//       { id: "bravo",  env: "BRAVO_API_KEY" },
+//       { id: "alpha", label: "Alpha", env: "ALPHA_API_KEY", mode: "api-key", autoEligible: true, showInCredentialUi: true },
 //     ];
+//
+// The browser receives the complete routing inventory, including keyless
+// providers. `showInCredentialUi` controls whether a provider gets an editor;
+// Routing and Diagnostics still need the hidden rows to explain the real chain.
 function renderBlock() {
   const lines = ['var PROVIDERS = [']
   for (const m of PROVIDER_METADATA) {
-    if (!m.showInCredentialUi) continue
-    if (m.credential.mode === 'none') continue
-    lines.push(`      { id: ${JSON.stringify(m.id)}, env: ${JSON.stringify(m.credential.canonicalRef)} },`)
+    lines.push(`      { id: ${JSON.stringify(m.id)}, label: ${JSON.stringify(m.displayName)}, env: ${JSON.stringify(m.credential.canonicalRef)}, mode: ${JSON.stringify(m.credential.mode)}, autoEligible: ${m.autoEligible === true}, showInCredentialUi: ${m.showInCredentialUi === true} },`)
   }
   lines.push('    ];')
   return lines.join('\n')
