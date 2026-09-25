@@ -260,6 +260,26 @@ DSH `0.1.7-alpha.1` 的宿主进程会在返回 `status=200` 的同时**丢掉�
 旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中；当前安装与兼容结论以上述
 0.1.7-alpha.1 结果为准。
 
+### 0.1.7-rc.1 升级审计（2026-09-25）
+
+对 DSH `0.1.7-alpha.1` → `0.1.7-rc.1` 做了逐包发布树对比审计（完整报告：
+agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）。
+结论：**无需代码改动**。
+
+- 插件用到的宿主 seam 全部未变或纯增量：`dsh-web`（`registerSearchProvider` /
+  `registerFetchProvider`）与 `dsh-client-ui-slots` 字节级相同，`dsh-tools` 仅新增
+  可选 hook，现有注册不动；
+- 本插件 `package.json` 无 `peerDependencies`，不受 rc.1 新增的插件 DSH peer
+  兼容门影响；
+- rc.1 唯一的相关行为变化是 `spill-policy` 预算键 `maxInlineBytes` →
+  `maxInlineTokens`（默认 50000 字节 ≈ 12500 token），插件代码不读写该键，仅
+  宿主侧大结果截断/落盘边界可能移动；
+- `cordis.patch.yml` 三行（`web.searchProvider`/`fetchProvider` 钉版、
+  `web-search-deepseek: disabled: true`、`tool-web: disabled: false`）在 rc.1
+  全部仍然有效且行为不变；
+- 审计后重跑 395 项测试全部通过（测试套件 mock 宿主 context，不依赖安装的
+  DSH 版本）。
+
 ## 安全边界
 
 - 拒绝 loopback、私网、链路本地、保留地址与危险重定向。

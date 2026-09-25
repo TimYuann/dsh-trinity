@@ -15,11 +15,12 @@
 # (5) Alpha 4 + rc.x compatibility: undo dsh-web-app's
 #     `tool-web: disabled: true`. dsh-web-app disables the
 #     whole row in its own patch layer on every rc.1/rc.2
-#     install path we have observed (verified against
-#     dsh-web-app@0.1.5-rc.2 cordis.patch.yml on 2026-09-11),
-#     so this row is NOT a no-op on rc.x — it actively
-#     re-enables tool-web. The line is also correct on
-#     alpha.4. Keep this row.
+#     install path we have observed (re-verified against
+#     dsh-web-app@0.1.7-rc.1 cordis.patch.yml L534 on
+#     2026-09-25; first verified against 0.1.5-rc.2 on
+#     2026-09-11), so this row is NOT a no-op on rc.x — it
+#     actively re-enables tool-web. The line is also correct
+#     on alpha.4. Keep this row.
 #
 # v2.2: credential refs are DSH env-name refs (EXA_API_KEY / …) — manage
 # with `/webdoctor-keys set <provider> <key>`; settings namespace is
