@@ -257,8 +257,8 @@ DSH `0.1.7-alpha.1` 的宿主进程会在返回 `status=200` 的同时**丢掉�
   已从被下架的 `gemini-2.5-flash` 改为 Google 追踪别名 `gemini-flash-latest`。
 - 未配置 key 的 Provider 会显示“待配置”，属预期状态。
 
-旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中；当前安装与兼容结论以上述
-0.1.7-alpha.1 结果为准。
+旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中。宿主已于 2026-09-25 升级到
+`0.1.7-rc.1` 并完成复验（见下节），当前安装与兼容结论以 rc.1 结果为准。
 
 ### 0.1.7-rc.1 升级审计（2026-09-25）
 
@@ -279,6 +279,21 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
   全部仍然有效且行为不变；
 - 审计后重跑 395 项测试全部通过（测试套件 mock 宿主 context，不依赖安装的
   DSH 版本）。
+
+2026-09-25 已完成升级执行与真实宿主复验：
+
+- 全局 DSH 升级 `0.1.7-alpha.1` → `0.1.7-rc.1`（`npm i -g`）；
+- `dsh --dump-config --profile dev-trinity` 组合正确：`web.searchProvider` /
+  `fetchProvider` 钉版落地、`web-search-deepseek` 保持 `disabled: true`、
+  `tool-web` 恢复为 `disabled: false`、`web-access-chain` bundle 行挂载、
+  `spill-policy` 使用 rc.1 新键 `maxInlineTokens: 12500`（无键丢失）；
+- dev-trinity profile 启动干净，插件 `web-access-chain.init { phase: 'done' }`，
+  宿主 boot manifest 正确广告并加载 `dsh-trinity` client artifact；
+- 真实 seam 测试（真实 rc.1 `dsh-web` 服务 + 插件真实 `apply()`）：
+  `registerSearchProvider` / `registerFetchProvider` 均成功注册，经宿主侧
+  选择链路完成真实 `web_fetch`（example.com，HTTP 200）与真实 `web_search`
+  （8 条真实结果，mmx 回退链路）；
+- 395 项测试与 14 项 patch 测试复跑通过。
 
 ## 安全边界
 
