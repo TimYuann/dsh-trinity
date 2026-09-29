@@ -255,6 +255,27 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 | `tools.*` | 可选工具（githubPrIssue / videoExtract / pdfExtract）注册开关。 |
 | `sourceCheck.*` | `source_check` 子问题数、抓取页数、每源段落数、评估模型。 |
 | `searxngHost` / `mmxFallback` | 自托管 SearXNG host 与本地 mmx 兜底开关。 |
+| `auxLlm.provider` / `auxLlm.model` | 插件自身 LLM 调用（综述、子问题拆解、来源评估）使用的路由；留空则跟随会话默认模型。 |
+
+### 辅助 LLM 路由（`auxLlm`）
+
+`output:"answer"`、`source_check` 的子问题拆解与来源评估都是**插件自己发起**的
+completion，与会话里 agent loop 的模型调用是两条路径。某些端点只接受携带会话头的
+agent loop 请求（例如 `opencode-go` 对插件调用返回 `400 MissingSessionID`），此时
+把这三次调用指向一条可用的路由即可，不必改动会话模型：
+
+```yaml
+- id: web-access-chain
+  config:
+    auxLlm:
+      provider: deepseek-official
+      model: deepseek-chat
+```
+
+2.4.2 起，这类失败**不再静默**：`web_search_ex` 会在结果里带 `answerError`
+并渲染一行 `answer synthesis unavailable (<code>) — <原因>`；`source_check` 会标注
+`assessmentSource: "heuristic"` 与 `assessmentError`，而不是让启发式结论冒充模型结论。
+同样的原因会写进宿主日志（一行 `dsh-trinity llm-call failed`）。
 
 ## DSH 0.1.7 / 0.2.0 兼容性
 
@@ -270,6 +291,15 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 - Provider / Tool / 命令 / Skill 全部注册成功，`web_fetch` 与多 Provider 搜索
   在真实网络下返回结果；
 - Host boot manifest 正确广告并加载 `dsh-trinity` client artifact。
+
+`2.4.2` 在真实 0.2.0-rc.2 宿主（桌面端 `desktop` profile 的隔离克隆）上补测了
+辅助 LLM 链路：
+
+- 默认路由拒绝插件调用时，`web_search_ex` 返回 `answerError.code = INVALID_REQUEST`
+  并在输出里说明，`source_check` 标注 `assessmentSource: "heuristic"` + 原因；
+- 通过 `settings.mutate()` 热改 `auxLlm`（provider `deepseek-official`）后，
+  同一会话的下一次 `output:"answer"` 立即产出真实综述，**无需重启插件**；
+- 该路径同时也验证了 `auxLlm` 字段的 volatile 热更新。
 
 `2.4.0` 的兼容性记录（DSH `0.1.7-alpha.1`）保留如下：
 
