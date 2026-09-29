@@ -68,14 +68,14 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
-`2.4.0` 已发布到 npm，面向 DSH `0.1.7-alpha.1`（`latest` dist-tag）：
+`2.4.1` 面向 DSH `0.1.7-alpha.1` 及更新版本（含最新发布的 `0.2.0-rc.2`）：
 
 ```bash
 dsh plugin --profile web add dsh-trinity
 ```
 
 也可以在 DSH Web 的 **Plugins → 添加插件** 里直接填写 `dsh-trinity`（或
-`dsh-trinity@2.4.0`、本仓库的 GitHub 地址、本地目录路径）。
+`dsh-trinity@2.4.1`、本仓库的 GitHub 地址、本地目录路径）。
 
 首次安装建议先落在独立 Profile，确认无误后再装到长期使用的 `web`：
 
@@ -92,11 +92,17 @@ dsh --profile dev-trinity --no-open --port 4601
 
 ```bash
 pnpm pack --pack-destination /tmp/dsh-trinity-build
-dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.0.tgz
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.1.tgz
 ```
 
 > 新版本进入 Profile 后，用 `dsh --profile <name> --dump-config` 核对 effective
 > config；“包安装成功”本身不等于插件已挂载或已通过运行验证。
+>
+> `2.4.0` 及更早版本存在配置不生效缺陷：DSH 0.1.7 起 `ctx.settings` 换成了
+> form API（`describe`/`update`/`mutate`），旧代码里的 `settings.register(...)`
+> 静默失效，`cordis.patch.yml` 中的 routing、超时、缓存、适配器开关等
+> **全部被丢弃**，插件实际跑在代码默认值上。`2.4.1` 通过导出 Cordis `Config`
+> 修复（见下节）。
 >
 > `2.3.0-rc.2` 及更早版本不包含本文所述的 DSH 0.1.7 Plugins 控制中心、
 > command input 修复，以及 2.4.0 的响应解压兼容修复。
@@ -207,9 +213,66 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 | `exa` 等单个 Provider ID | 强制指定一个 Provider；失败即返回失败，不做跨 Provider 回退。 |
 | `["exa", "tavily"]` | 按数组顺序尝试 Provider。 |
 
-## DSH 0.1.7-alpha.1 兼容性
+## 插件参数配置（routing / 预算 / 适配器开关）
 
-`2.4.0` 已在独立 `dev-trinity` Profile 与 DSH `0.1.7-alpha.1` 上验证：
+插件入口导出了 Cordis `Config` schema（`lib/config-schema.js`），因此
+`cordis.patch.yml` 里 `web-access-chain` 行的配置**真的会生效**：
+
+- Host 会用 schema 默认值补全该行的原始配置，并把解析结果交给 `apply(ctx, config)`；
+- 该行会出现在 DSH 原生设置表单里（`settings.describe()`），可通过
+  `settings.update()` / `settings.mutate()` 就地修改；
+- 所有可编辑字段都标记为 `volatile`：修改会被写进 profile patch，并由 Cordis
+  直接更新既有引用（`loader/volatile-update`），**不需要重启插件进程**；
+- `authFetch` 刻意不是 volatile —— 它保存凭据引用与来源白名单，不进入自动生成的表单。
+
+示例：关闭通用 HTML 适配器（该改动立即生效，`web_fetch` 会返回
+`generic-html-disabled` 信封而不是正文）：
+
+```yaml
+- id: web-access-chain
+  config:
+    adapters:
+      genericHtml:
+        enabled: false
+```
+
+> 2.4.0 及更早版本没有这条链路：`settings.register(...)` 在 DSH ≥ 0.1.7 上不存在，
+> 插件静默回落到 `{}`，上表中的配置项全部无效（`web-access-chain.init` 会打印
+> `settings: 0`）。2.4.1 修复后该行为 `settings: 21`。
+
+### 配置项一览
+
+| 键 | 作用 |
+|---|---|
+| `routing` | 全局默认路由（`auto` / `aggregate`）；单次调用仍可用 Tool 参数覆盖。 |
+| `searchTotalTimeoutMs` / `perProviderTimeoutMs` / `perKeyTimeoutMs` | 搜索总预算与单 Provider / 单 Key 超时。 |
+| `maxProvidersPerSearch` / `maxKeysPerProvider` / `aggregateMaxFanout` | 扇出与并发上限。 |
+| `cacheTtlMs` / `cacheMaxEntries` / `cacheMaxBytes` | 进程内缓存策略。 |
+| `fetchRoutingMode` / `fetchMaxResponseMB` | 抓取模式与响应体上限。 |
+| `ssrf.allowRanges` / `ssrf.trustEnvProxy` / `proxy` | SSRF 例外与环境代理信任。 |
+| `domainPolicy.allow` / `domainPolicy.deny` | 域名白 / 黑名单。 |
+| `adapters.*.enabled` | github / youtube / rss / pdf / genericHtml 适配器开关。 |
+| `tools.*` | 可选工具（githubPrIssue / videoExtract / pdfExtract）注册开关。 |
+| `sourceCheck.*` | `source_check` 子问题数、抓取页数、每源段落数、评估模型。 |
+| `searxngHost` / `mmxFallback` | 自托管 SearXNG host 与本地 mmx 兜底开关。 |
+
+## DSH 0.1.7 / 0.2.0 兼容性
+
+`2.4.1` 已在独立 `dev-trinity` Profile 上对 **DSH `0.1.7-rc.1`** 与
+**DSH `0.2.0-rc.2`**（当前 npm `latest`，即桌面 App 版本）双版本实测：
+
+- 412 项测试和全部静态 gate 通过；
+- 冷启动 `web-access-chain.init { phase: 'done', settings: 21 }`，无告警；
+- `settings.describe()` 列出 `web-access-chain` 行（19 个 volatile 字段），
+  `settings.mutate()` 就地改写 `adapters.genericHtml.enabled` 后，`web_fetch`
+  立刻返回 `generic-html-disabled`，再改回 `true` 立刻恢复正文输出，且
+  **插件没有重启**（`apply()` 只执行一次）；
+- Provider / Tool / 命令 / Skill 全部注册成功，`web_fetch` 与多 Provider 搜索
+  在真实网络下返回结果；
+- Host boot manifest 正确广告并加载 `dsh-trinity` client artifact。
+
+`2.4.0` 的兼容性记录（DSH `0.1.7-alpha.1`）保留如下：
+
 
 - 395 项测试和全部静态 gate 通过；
 - 打包产物可安装，且不包含 tests、docs、`.pi` 或 `lib/_deferred`；
@@ -306,12 +369,16 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
 ## 开发与验证
 
 ```bash
-pnpm test
+pnpm test                        # 412 项：单元 + 集成 + 契约 + settings 管道
 pnpm run lint:no-llm-in-providers
 npm pack --dry-run
 ```
 
 发布前应至少完成：Profile composition 验证、真实 `web_fetch` 验证、Provider Key 状态检查，以及 `npm pack --dry-run` 包内容检查。
+
+`test/settings/settings-plumbing.test.js` 专门锁定 2.4.1 的配置链路：`Config`
+导出、volatile 引用解包、`describe`/`mutate` 读写，以及“适配器开关真的改变
+`web_fetch` 行为”这一端到端断言。
 
 ## 许可证
 
