@@ -15,6 +15,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+
+const PKG = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 
 import { Config, name, version, apply } from '../../lib/index.js'
 import { WebAccessChainSchema } from '../../lib/config-schema.js'
@@ -84,7 +87,7 @@ function stubHost(settings) {
 
 test('v2.4.1: the entry exports the Cordis Config schema', () => {
   assert.equal(name, 'web-access-chain')
-  assert.equal(version, '2.4.1')
+  assert.equal(version, PKG.version, 'runtime and package version stay in lockstep')
   assert.equal(typeof Config, 'function')
   assert.equal(Config, WebAccessChainSchema)
   assert.ok('toJSON' in Config, 'the settings service requires a serialisable schema')

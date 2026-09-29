@@ -385,7 +385,7 @@ test('AC #20: source_check Tool has full 6-step algorithm + immutable snapshot r
 // ── meta: package metadata ───────────────────────────────────────────
 test('R1 metadata: package and runtime versions stay in lockstep', () => {
   assert.equal(PKG.name, 'dsh-trinity')
-  assert.equal(PKG.version, '2.4.1')
+  assert.equal(PKG.version, '2.4.2')
   assert.equal(name, 'web-access-chain')
   assert.equal(version, PKG.version)
 })
