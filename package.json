@@ -1,6 +1,6 @@
 {
   "name": "dsh-trinity",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Multi-provider web search, fetch, source checking, and provider operations for DeepSeek Harness.",
   "type": "module",
   "main": "lib/index.js",
@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js test/integration/*.test.js test/credentials/*.test.js test/cache/*.test.js test/source-check/*.test.js test/commands/*.test.js test/skills/*.test.js test/adapters/*.test.js test/contract/*.test.js test/providers/fetch/*.test.js",
+    "test": "node --test test/*.test.js test/integration/*.test.js test/credentials/*.test.js test/cache/*.test.js test/source-check/*.test.js test/commands/*.test.js test/skills/*.test.js test/adapters/*.test.js test/contract/*.test.js test/providers/fetch/*.test.js test/settings/*.test.js",
     "sync-bundle": "node bin/sync-bundle.js",
     "sync-bundle:check": "node bin/sync-bundle.js --check",
     "lint:no-llm-in-providers": "node bin/lint-no-llm-in-providers.js",
