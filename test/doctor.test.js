@@ -92,16 +92,41 @@ test('probe reports all 18 + 8 + 1 (mmx) providers', async () => {
   assert.equal(r.providers.length, 27)
 })
 
-test('probe reports 5 adapters', async () => {
+test('probe reports 6 adapters, each with a unique id', async () => {
   const probe = createProbe(makeStubCtx(), null)
   const r = await probe.run({})
-  assert.equal(r.adapters.length, 5)
+  assert.equal(r.adapters.length, 6)
   const adapterIds = r.adapters.map((a) => a.id)
   assert.ok(adapterIds.includes('github'))
   assert.ok(adapterIds.includes('youtube'))
   assert.ok(adapterIds.includes('rss'))
   assert.ok(adapterIds.includes('pdf'))
   assert.ok(adapterIds.includes('genericHtml'))
+  assert.ok(adapterIds.includes('x'))
+  assert.equal(new Set(adapterIds).size, adapterIds.length, 'adapter ids must be unique')
+})
+
+// The X adapter drives the operator's own logged-in browser, so the
+// doctor must report it as OFF unless settings say otherwise, and must
+// say `cheap: false`. A count bump alone would not prove the wiring.
+test('probe reports the x adapter as opt-in, not cheap, and off by default', async () => {
+  for (const settings of [null, {}, { adapters: {} }, { adapters: { x: {} } }, { adapters: { x: { enabled: false } } }]) {
+    const probe = createProbe(makeStubCtx(), settings)
+    const r = await probe.run({})
+    const x = r.adapters.find((a) => a.id === 'x')
+    assert.ok(x, 'x adapter row must exist')
+    assert.equal(x.enabled, false, `x must be off for ${JSON.stringify(settings)}`)
+    assert.equal(x.cheap, false)
+    assert.equal(x.optIn, true)
+    assert.equal(x.activeBackend, 'opencli')
+  }
+})
+
+test('probe reports the x adapter as enabled only on a literal true', async () => {
+  const probe = createProbe(makeStubCtx(), { adapters: { x: { enabled: true } } })
+  const r = await probe.run({})
+  const x = r.adapters.find((a) => a.id === 'x')
+  assert.equal(x.enabled, true)
 })
 
 test('probe reports identity fields', async () => {
