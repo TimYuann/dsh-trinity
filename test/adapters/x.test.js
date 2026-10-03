@@ -127,6 +127,22 @@ test('x: the timeline verb is a frozen literal, never derived from input', () =>
   assert.deepEqual([...x.READ_ONLY_VERBS], ['tweets'])
 })
 
+// Regression guard for a defect the dev-profile e2e actually produced:
+// web_fetch carries ToolDefinition.timeoutMs = dsh-tool-web's
+// fetchTimeoutMs (default 30000), and dsh-tool-call-timeout-policy turns
+// that into a HARD abort. A 120s adapter deadline therefore never
+// degraded — the host killed the call first, and the user saw a bare
+// "tool call timed out" instead of a degraded public page.
+test('x: the default deadline must fit inside the host web_fetch budget', () => {
+  const HOST_WEB_FETCH_BUDGET_MS = 30_000 // dsh-tool-web DEFAULT_WEB_TOOL_TIMEOUT_MS
+  assert.ok(
+    x.DEFAULT_TIMEOUT_MS < HOST_WEB_FETCH_BUDGET_MS,
+    `DEFAULT_TIMEOUT_MS (${x.DEFAULT_TIMEOUT_MS}) must leave room inside the host budget (${HOST_WEB_FETCH_BUDGET_MS}) for the degradation fallback`,
+  )
+  // And it must still be generous against measured healthy latency (5-7s).
+  assert.ok(x.DEFAULT_TIMEOUT_MS >= 15_000, 'too tight: a cold opencli would degrade spuriously')
+})
+
 test('x: buildArgv puts the subcommand at argv[2] and varies only the bounded limit', () => {
   const a = x.buildArgv({ username: 'karpathy' }, 20)
   const b = x.buildArgv({ username: 'karpathy' }, 50)
