@@ -87,7 +87,11 @@ test('llm-call: a finish-carried provider error is reported, not swallowed', asy
   assert.equal(report.error.code, 'INVALID_REQUEST')
   assert.match(report.error.message, /MissingSessionID/)
   assert.equal(ctx.warnings.length, 1, 'the failure must reach the host log')
-  assert.match(ctx.warnings[0][2], /MissingSessionID/)
+  // The reason travels in the FIRST argument: a logger that appends extra
+  // parameters is a sink detail, and the plugin's own facade drops a third
+  // argument outright.
+  assert.match(String(ctx.warnings[0][0]), /MissingSessionID/)
+  assert.match(String(ctx.warnings[0][0]), /INVALID_REQUEST/)
 })
 
 test('llm-call: oneShotCompletion keeps its text-or-null contract', async () => {

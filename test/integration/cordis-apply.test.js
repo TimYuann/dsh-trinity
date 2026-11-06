@@ -40,11 +40,19 @@ test('apply() registers the tool surface even when skills/commands are absent', 
   const ctx = makeStubCtx({ withoutSkills: true, withoutCommands: true })
   const lines = []
   // The plugin's logger facade reads `ctx.logger` (a property, not a
-  // service), so the stub logger is installed there.
+  // service), so the stub logger is installed there. The stub models the
+  // facade's own rule — a plain meta second argument DROPS the third one
+  // (lib/logger.js `emitWithErr`) — so a call that hides its explanation
+  // in a third argument fails here exactly as it would in the Host.
+  const facadeLine = (m, errOrMeta) => {
+    const errorLike = errOrMeta && typeof errOrMeta === 'object' &&
+      typeof errOrMeta.name === 'string' && typeof errOrMeta.message === 'string'
+    return errorLike ? `${m} ${errOrMeta.message}` : String(m)
+  }
   ctx.logger = {
-    warn: (m, meta, msg) => lines.push(String(msg || m)),
-    info: (m, meta, msg) => lines.push(String(msg || m)),
-    error: (m, meta, msg) => lines.push(String(msg || m)),
+    warn: (m, errOrMeta) => lines.push(facadeLine(m, errOrMeta)),
+    info: (m, errOrMeta) => lines.push(facadeLine(m, errOrMeta)),
+    error: (m, errOrMeta) => lines.push(facadeLine(m, errOrMeta)),
     debug() {},
   }
   await apply(ctx, {})
