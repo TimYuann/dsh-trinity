@@ -19,7 +19,9 @@ DSH Trinity 保留 DSH 原生的 `web_search` 与 `web_fetch` 工具体验，并
 ### 网页抓取与内容处理
 
 - 将 DSH 原生 `web_fetch` 路由到 `web-access-chain-fetch`。
-- 支持 HTML、RSS/Atom、PDF、GitHub、YouTube 等内容适配器。
+- 支持 HTML、RSS/Atom、PDF、GitHub、YouTube 内容适配器；另有 **X / Twitter 时间线**
+  适配器（经 OpenCLI 浏览器桥接），**默认关闭**——需显式打开 `adapters.x.enabled`
+  才会生效，且必须显式设成 `true`（缺省值不算开启）。
 - 提供 Readability / Defuddle 内容提取、Markdown 转换与 RSC 页面识别。
 - 提供 SSRF 防护：阻止本机、私网、保留网段及危险重定向。
 - 支持域名 allow/deny policy。抓取与适配器（fetch 管线）的全部出站 HTTP 走唯一一条 `safeHttpFetch`：逐跳校验 URL policy、手动重定向循环、跨域重定向时不携带敏感头、字节上限与流取消、abort 透传。所有适配器都经由它；搜索 Provider 调用的是各自**固定的**服务端点（URL 不由用户输入决定），因此不走该管线。
@@ -68,7 +70,7 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
-`2.4.4` 面向 DSH `0.1.7` 及更新版本：本机实测运行时为 DSH `0.2.1-rc.5`，官方最新
+`2.4.5` 面向 DSH `0.1.7` 及更新版本：本机实测运行时为 DSH `0.2.1-rc.5`，官方最新
 已发布 tag 为 `0.2.2-alpha.2`。插件在 manifest 中声明 `engines.dsh: ">=0.1.7-0"`
 版本闸门——`0.1.7` 线及更新版本可安装（含 `0.1.7-alpha.1` / `0.1.7-rc.1` 这类
 预发布标签，`-0` 后缀正是为此保留），更旧的宿主在**安装期**即被拒绝：
@@ -78,7 +80,7 @@ dsh plugin --profile web add dsh-trinity
 ```
 
 也可以在 DSH Web 的 **Plugins → 添加插件** 里直接填写 `dsh-trinity`（或
-`dsh-trinity@2.4.4`、本仓库的 GitHub 地址、本地目录路径）。
+`dsh-trinity@2.4.5`、本仓库的 GitHub 地址、本地目录路径）。
 
 首次安装建议先落在独立 Profile，确认无误后再装到长期使用的 `web`：
 
@@ -95,7 +97,7 @@ dsh --profile dev-trinity --no-open --port 4601
 
 ```bash
 pnpm pack --pack-destination /tmp/dsh-trinity-build
-dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.4.tgz
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.5.tgz
 ```
 
 > 新版本进入 Profile 后，用 `dsh --profile <name> --dump-config` 核对 effective
@@ -266,7 +268,8 @@ search_content(cacheRef="wac_...", findText="bundle patch", findMode="fuzzy")
 | `fetchRoutingMode` / `fetchMaxResponseMB` | 抓取模式与响应体上限。 |
 | `ssrf.allowRanges` / `ssrf.trustEnvProxy` / `proxy` | SSRF 例外与环境代理信任。 |
 | `domainPolicy.allow` / `domainPolicy.deny` | 域名白 / 黑名单。 |
-| `adapters.*.enabled` | github / youtube / rss / pdf / genericHtml 适配器开关。 |
+| `adapters.*.enabled` | github / youtube / rss / pdf / genericHtml / **x** 适配器开关（`x` 默认关闭）。 |
+| `adapters.x.limit` / `adapters.x.timeoutMs` | X 时间线的抓取条数上限与超时（默认 20 / 20000 ms）。超时必须留在宿主的 `web_fetch` 预算内，否则宿主先中止，适配器的降级逻辑不会执行。 |
 | `tools.*` | 可选工具（githubPrIssue / videoExtract / pdfExtract）注册开关。 |
 | `sourceCheck.*` | `source_check` 子问题数、抓取页数、每源段落数、评估模型。 |
 | `searxngHost` / `mmxFallback` | 自托管 SearXNG host 与本地 mmx 兜底开关。 |
@@ -293,6 +296,10 @@ agent loop 请求（例如 `opencode-go` 对插件调用返回 `400 MissingSessi
 同样的原因会写进宿主日志（一行 `dsh-trinity llm-call failed`）。
 
 ## DSH 0.1.7 / 0.2.0 兼容性（历史实测）
+
+> 本节保留的是 **2.4.0～2.4.2** 时代的实测原文，便于追溯。其中关于
+> `cordis.patch.yml` 三行（含 `tool-web: disabled: false`）的描述**只对当时的版本成立**：
+> 自 `2.4.3` 起插件不再改写 `tool-web` 行，见「web 工具的宿主组合模型变化」。
 
 `2.4.1` 已在独立 `dev-trinity` Profile 上对 **DSH `0.1.7-rc.1`** 与
 **DSH `0.2.0-rc.2`**（当时的 npm `latest`，即桌面 App 版本）双版本实测：
@@ -417,10 +424,15 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
 插件里的 legacy 分支因此只在 `≤0.1.6` 的宿主上可达——自 `engines.dsh >= 0.1.7-0`
 起在新安装中不会执行。
 
-**活体检查** —— 在真实宿主上确认：插件行 `include:web-access-chain` 的 Config
-schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_content`、
-`source_check`、`web_doctor`）与 2 个 Skill（`web-access`、`web-access-doctor`）
-均已注册；`web_doctor` 的被动诊断（`activeProbe: false`）正常返回。
+**活体检查** —— 在真实宿主（桌面端 `desktop` Profile，DSH `0.2.1-rc.5`）上确认：
+插件行 `include:web-access-chain` 的 Config schema 处于 `schema` 状态；4 个常驻工具
+（`web_search_ex`、`search_content`、`source_check`、`web_doctor`）与 2 个 Skill
+（`web-access`、`web-access-doctor`）均已注册；`web_doctor` 的被动诊断
+（`activeProbe: false`）正常返回，并列出 6 个适配器（含默认关闭的 `x`）。
+
+**端到端调用（2026-11-06，`2.4.4`）** —— 通过插件自己的链路在真实宿主上跑通两条：
+`web_search_ex` 命中 Exa 并返回真实来源；`web_fetch` 抓取 `https://example.com/`
+返回 HTTP 200 正文。
 
 **凭据优先级文案修正** —— 宿主 `dsh-credentials-local` 的 `resolve(ref)` 是 **store
 优先**（`source: "file"` → `"env"` → `.env`）。插件此前的注释与 `/webdoctor-keys`
@@ -428,8 +440,11 @@ schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_co
 `ctx.credentials.resolve()`，未发生改变**（详见
 `docs/audit/2026-11-03-host-seam-conformance.md` 的 F3）。
 
-本轮**未**验证的项：真实 provider 的端到端调用、浏览器端渲染。因此本节不对这两项
+本轮**未**验证的项：浏览器端渲染（工具卡片、设置表单的实际渲染）。因此本节不对该项
 作任何结论；`0.1.7-rc.1` / `0.2.0-rc.2` 时期的端到端记录见上一节。
+
+插件 manifest 新增 `engines.dsh: ">=0.1.7-0"` 版本闸门：低于 `0.1.7` 线的宿主在
+安装期即被拒绝，不会进入运行期。
 
 ### 2.4.4 补丁：web_doctor 的输出 schema 漏声明一个字段
 
@@ -439,9 +454,6 @@ schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_co
 （`"value.adapters[5].optIn" is not a declared property`）。`2.4.4` 补上这个字段，
 并新增一条契约测试：doctor 的报告必须满足工具自己声明的输出 schema（此前没有任何
 测试覆盖这条边界）。
-
-插件 manifest 新增 `engines.dsh: ">=0.1.7-0"` 版本闸门：低于 `0.1.7` 线的宿主在
-安装期即被拒绝，不会进入运行期。
 
 ## web 工具的宿主组合模型变化（DSH 0.2.1+）
 
@@ -478,6 +490,11 @@ npm pack --dry-run
 ```
 
 发布前应至少完成：Profile composition 验证、真实 `web_fetch` 验证、Provider Key 状态检查，以及 `npm pack --dry-run` 包内容检查。
+
+工具的**结构化结果必须能被宿主接受**：宿主按工具自己声明的 `output.schema` 校验
+结果，schema 里 `additionalProperties: false` 的对象一旦多出未声明的字段，整个结果
+会被拒绝（`2.4.3` 的 `web_doctor` 就是这样失效的）。`test/contract/tool-output-schema.test.js`
+锁定这条边界：doctor 报告必须满足工具声明的 schema。
 
 `test/settings/settings-plumbing.test.js` 专门锁定 2.4.1 的配置链路：`Config`
 导出、volatile 引用解包、`describe`/`mutate` 读写，以及“适配器开关真的改变
