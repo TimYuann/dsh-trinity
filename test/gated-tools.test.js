@@ -53,6 +53,18 @@ function makeStubCtx(toolsCfg = {}) {
       const d = fn()
       return () => { try { if (typeof d === 'function') d() } catch {} }
     },
+    // Optional-dependency child fiber, like cordis' own ctx.inject.
+    inject(deps, cb) {
+      const parent = this
+      const child = {
+        get: (key) => parent.get(key),
+        effect: (fn) => parent.effect(fn),
+      }
+      // A cordis context resolves a service both by property and by get().
+      for (const d of deps) child[d] = parent.get(d)
+      if (deps.every((d) => child.get(d))) cb(child)
+      return { dispose() {} }
+    },
   }
 }
 

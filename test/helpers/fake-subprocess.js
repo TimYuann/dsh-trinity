@@ -46,14 +46,17 @@ function spawnViaChildProcess(spec) {
   const out = { text: '', truncated: false }
   const err = { text: '', truncated: false }
 
+  // The HOST keeps the TAIL of a truncated stream (SubprocessCollect:
+  // "Collected text — the TAIL of the stream when truncated") and reports
+  // `lossy` when the head slid out. The double does the same, so a test
+  // cannot pass against a more forgiving collector than the real one.
   const collect = (stream, bucket, cap) => {
     if (!stream) return
     stream.on('data', (chunk) => {
       const s = chunk.toString()
-      if (bucket.text.length >= cap) { bucket.truncated = true; return }
       bucket.text += s
       if (bucket.text.length > cap) {
-        bucket.text = bucket.text.slice(0, cap)
+        bucket.text = bucket.text.slice(bucket.text.length - cap)
         bucket.truncated = true
       }
     })

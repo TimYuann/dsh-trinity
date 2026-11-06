@@ -100,6 +100,10 @@ test('credential sources never document the reversed (env-first) order', async (
   const files = [
     '../../lib/credentials/resolve.js',
     '../../lib/commands/webdoctor-keys.js',
+    // The same wording also reached the model through the tool guidance and
+    // the README, so both are guarded too.
+    '../../lib/tool-guidance.js',
+    '../../README.md',
   ]
   for (const rel of files) {
     const text = await readFile(new URL(rel, import.meta.url), 'utf8')

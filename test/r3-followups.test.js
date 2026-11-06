@@ -391,22 +391,51 @@ function fakeSubprocessCtx(options = {}) {
   return { ctx, calls }
 }
 
+// A handle shaped like @deepseek-ai/dsh-subprocess 0.2.1-rc.5, with the
+// HOST's semantics, not a more forgiving double:
+//   - `terminate()` makes the managed range settle `done` (the host
+//     escalates within `graceMs` and the outcome lands);
+//   - a collected stream keeps the TAIL, and `lossy` says the head is gone;
+//   - `waitForExit` may never settle when a survivor holds the range.
 function fakeHandle(overrides = {}) {
   const out = overrides.stdout || ''
   const err = overrides.stderr || ''
-  return {
+  let resolveDone = null
+  const done = new Promise((resolve) => { resolveDone = resolve })
+  const handle = {
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,
     control: undefined,
     collected: {
-      stdout: { readFrom: () => ({ text: out, nextOffset: out.length, lossy: false }) },
+      stdout: { readFrom: () => ({ text: out, nextOffset: out.length, lossy: overrides.lossy === true }) },
       stderr: { readFrom: () => ({ text: err, nextOffset: err.length, lossy: false }) },
     },
-    done: Promise.resolve({ exitCode: overrides.exitCode === undefined ? 0 : overrides.exitCode, signal: overrides.signal || null }),
-    terminate() { if (overrides.onTerminate) overrides.onTerminate() },
-    waitForExit: async () => true,
+    done,
+    terminate() {
+      handle.terminated = true
+      if (overrides.onTerminate) overrides.onTerminate()
+      if (resolveDone) resolveDone({ exitCode: null, signal: 'SIGTERM' })
+    },
+    waitForExit: async (signal) => {
+      if (overrides.survivor) {
+        // A survivor holds the managed range open. The host resolves the
+        // wait with `false` when the bound signal aborts first.
+        await new Promise((resolve) => {
+          if (!signal) return
+          const onAbort = () => resolve(false)
+          if (signal.aborted) onAbort()
+          else signal.addEventListener('abort', onAbort, { once: true })
+        })
+        return false
+      }
+      return true
+    },
   }
+  if (overrides.pending !== true) {
+    resolveDone({ exitCode: overrides.exitCode === undefined ? 0 : overrides.exitCode, signal: overrides.signal || null })
+  }
+  return handle
 }
 
 test('P1 #9: runSubprocess rejects non-allowlisted argv[0]', async () => {
@@ -547,23 +576,44 @@ test('P1 #13: chained-fetch blocks redirect to SSRF-blocked target', async () =>
 
 test('P1 #14: runSubprocess resolves with {truncated:true} on timeout, NOT reject', async () => {
   const { runSubprocess } = await import('../lib/util/subprocess.js')
-  let resolveDone = null
-  const handle = fakeHandle({
-    stdout: 'partial output',
-    onTerminate: () => { if (resolveDone) resolveDone({ exitCode: null, signal: 'SIGTERM' }) },
-  })
-  handle.done = new Promise((resolve) => { resolveDone = resolve })
+  const handle = fakeHandle({ stdout: 'partial output', pending: true })
   const { ctx } = fakeSubprocessCtx({ handle: () => handle })
 
   const result = await runSubprocess(ctx, {
     argv: ['git', '--help'],
-    timeoutMs: 20,
+    timeoutMs: 50,
     maxOutputBytes: 1024,
   })
   assert.equal(result.truncated, true)
   assert.equal(result.exitCode, null)
   assert.equal(result.signal, 'SIGTERM')
   assert.equal(result.stdout, 'partial output')
+})
+
+test('DSH 0.2.1: the caller\'s deadline is NOT stretched by the termination grace', async () => {
+  // The adapters deliberately keep a slice of the host's web_fetch budget
+  // for their degradation path, so the wrapper must return at the deadline,
+  // not at deadline + grace.
+  const { runSubprocess } = await import('../lib/util/subprocess.js')
+  const handle = fakeHandle({ pending: true })  // `done` never settles
+  const { ctx } = fakeSubprocessCtx({ handle: () => handle })
+
+  const started = Date.now()
+  const result = await runSubprocess(ctx, { argv: ['git', '--help'], timeoutMs: 200 })
+  const elapsed = Date.now() - started
+  assert.equal(result.truncated, true)
+  assert.ok(elapsed < 1200, `the call must return at its deadline (took ${elapsed}ms)`)
+})
+
+test('DSH 0.2.1: a survivor in the managed range does not hang the caller', async () => {
+  const { runSubprocess } = await import('../lib/util/subprocess.js')
+  const handle = fakeHandle({ survivor: true })  // `done` lands, the range stays open
+  const { ctx } = fakeSubprocessCtx({ handle: () => handle })
+
+  const started = Date.now()
+  await runSubprocess(ctx, { argv: ['git', '--help'], timeoutMs: 5000 })
+  const elapsed = Date.now() - started
+  assert.ok(elapsed < 2000, `the wait for the managed range must be bounded (took ${elapsed}ms)`)
 })
 
 

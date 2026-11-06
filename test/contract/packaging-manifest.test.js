@@ -19,234 +19,83 @@ const PACKAGE = JSON.parse(readFileSync(new URL('../../package.json', import.met
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const ICON_LIMIT_BYTES = 256 * 1024
 
-// ── semver-lite:start ──
-// Minimal semver range support. The semantics mirror semver 7.x for the
-// comparator forms used by `engines.dsh` (>=, <=, >, <, =, ^, ~, partial
-// versions, x-ranges, whitespace-joined sets, `||` alternatives and hyphen
-// ranges) and were differentially checked against the semver version the DSH
-// host ships.
-const WILDCARDS = new Set(['x', 'X', '*'])
-
-function isWildcard (value) {
-  return value === undefined || WILDCARDS.has(value)
-}
-
-function at (major, minor, patch, prerelease = []) {
-  return { major, minor, patch, prerelease }
-}
-
+// ── semver floor:start ──
+// The Host decides compatibility with
+// `semver.satisfies(runtimeVersion, engines.dsh, { includePrerelease: true })`
+// (dsh-app-boot/lib/index.js). This plugin declares ONE range shape — a
+// `>=` comparator with a `-0` prerelease floor — so these checks spell out
+// that single rule instead of re-implementing semver inside the test (a
+// hand-rolled semver would only prove that the hand-rolled semver agrees
+// with itself).
+//
+// The `-0` floor is load-bearing: with `includePrerelease`, a prerelease
+// sorts BELOW its own release, so `>=0.1.7` would REJECT `0.1.7-alpha.1`
+// while `>=0.1.7-0` accepts it. The samples below were cross-checked
+// against the semver build the DSH host ships (semver 7.8.5).
 function parseVersion (raw) {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(raw).trim())
-  if (match === null) throw new Error(`invalid semantic version: ${raw}`)
-  const prerelease = match[4] === undefined ? [] : match[4].split('.')
-  for (const identifier of prerelease) {
-    if (identifier === '') throw new Error(`invalid prerelease identifier in ${raw}`)
-    if (/^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith('0')) {
-      throw new Error(`invalid numeric prerelease identifier in ${raw}`)
-    }
+  if (!match) return null
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] === undefined ? [] : match[4].split('.'),
   }
-  return at(Number(match[1]), Number(match[2]), Number(match[3]), prerelease)
-}
-
-function compareIdentifiers (left, right) {
-  const leftNumeric = /^\d+$/.test(left)
-  const rightNumeric = /^\d+$/.test(right)
-  if (leftNumeric && rightNumeric) {
-    const difference = Number(left) - Number(right)
-    return difference === 0 ? 0 : (difference < 0 ? -1 : 1)
-  }
-  if (leftNumeric) return -1
-  if (rightNumeric) return 1
-  return left === right ? 0 : (left < right ? -1 : 1)
 }
 
 function comparePrerelease (left, right) {
   if (left.length === 0 && right.length === 0) return 0
-  if (left.length === 0) return 1
+  if (left.length === 0) return 1   // a release outranks its prereleases
   if (right.length === 0) return -1
-  for (let index = 0; index < Math.max(left.length, right.length); index++) {
-    if (left[index] === undefined) return -1
-    if (right[index] === undefined) return 1
-    const difference = compareIdentifiers(left[index], right[index])
-    if (difference !== 0) return difference
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const a = left[i]
+    const b = right[i]
+    if (a === undefined) return -1
+    if (b === undefined) return 1
+    const na = /^\d+$/.test(a)
+    const nb = /^\d+$/.test(b)
+    if (na && nb) {
+      const diff = Number(a) - Number(b)
+      if (diff !== 0) return diff < 0 ? -1 : 1
+    } else if (na !== nb) {
+      return na ? -1 : 1   // numeric identifiers sort below alphanumeric ones
+    } else if (a !== b) {
+      return a < b ? -1 : 1
+    }
   }
   return 0
 }
 
 function compareVersions (left, right) {
-  if (left.major !== right.major) return left.major < right.major ? -1 : 1
-  if (left.minor !== right.minor) return left.minor < right.minor ? -1 : 1
-  if (left.patch !== right.patch) return left.patch < right.patch ? -1 : 1
+  for (const key of ['major', 'minor', 'patch']) {
+    if (left[key] !== right[key]) return left[key] < right[key] ? -1 : 1
+  }
   return comparePrerelease(left.prerelease, right.prerelease)
 }
 
-const COMPARATOR_PATTERN = /^(\^|~>?|>=|<=|>|<|=)?\s*v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
-
-function anyComparator () {
-  // semver models `*` and `>=0.0.0` as one comparator that matches every
-  // version but carries no prerelease, so prereleases stay excluded from it
-  // unless the caller opts into them.
-  return { operator: 'any', version: at(0, 0, 0) }
+/**
+ * Does `version` satisfy a `>=<floor>` range whose floor carries a `-0`
+ * prerelease tag (the shape this plugin declares)?
+ *
+ * @param {string} version
+ * @param {string} range
+ * @returns {boolean}
+ */
+function satisfiesFloor (version, range) {
+  const match = /^>=\s*v?(\d+)\.(\d+)\.(\d+)-0$/.exec(String(range).trim())
+  if (!match) return false
+  const floor = {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    // The `-0` floor IS a prerelease: the lowest one of that version.
+    prerelease: ['0'],
+  }
+  const candidate = parseVersion(version)
+  if (!candidate) return false
+  return compareVersions(candidate, floor) >= 0
 }
-
-function expandComparator (token, includePrerelease) {
-  const match = COMPARATOR_PATTERN.exec(token)
-  if (match === null) throw new Error(`invalid comparator: ${token}`)
-  const operator = match[1] === undefined ? '' : match[1]
-  const major = isWildcard(match[2]) ? null : Number(match[2])
-  const minor = isWildcard(match[3]) ? null : Number(match[3])
-  const patch = isWildcard(match[4]) ? null : Number(match[4])
-  const prerelease = match[5] === undefined ? [] : match[5].split('.')
-  // `-0` is the lowest possible prerelease; semver adds it to the lower
-  // bound of x-ranges, carets and tildes when prereleases participate.
-  const zero = includePrerelease ? ['0'] : []
-
-  if (major === null) {
-    if (operator === '>' || operator === '<') return [{ operator: '<', version: at(0, 0, 0, ['0']) }]
-    return [anyComparator()]
-  }
-  if (minor === null && patch !== null) throw new Error(`invalid comparator: ${token}`)
-
-  if (operator === '^') {
-    if (minor === null) {
-      return [{ operator: '>=', version: at(major, 0, 0, zero) }, { operator: '<', version: at(major + 1, 0, 0, ['0']) }]
-    }
-    if (patch === null) {
-      const upper = major === 0 ? at(0, minor + 1, 0, ['0']) : at(major + 1, 0, 0, ['0'])
-      return [{ operator: '>=', version: at(major, minor, 0, zero) }, { operator: '<', version: upper }]
-    }
-    if (major === 0 && minor === 0) {
-      return [{ operator: '>=', version: at(0, 0, patch, prerelease) }, { operator: '<', version: at(0, 0, patch + 1, ['0']) }]
-    }
-    if (major === 0) {
-      return [{ operator: '>=', version: at(0, minor, patch, prerelease) }, { operator: '<', version: at(0, minor + 1, 0, ['0']) }]
-    }
-    return [{ operator: '>=', version: at(major, minor, patch, prerelease) }, { operator: '<', version: at(major + 1, 0, 0, ['0']) }]
-  }
-
-  if (operator === '~' || operator === '~>') {
-    if (minor === null) {
-      return [{ operator: '>=', version: at(major, 0, 0, zero) }, { operator: '<', version: at(major + 1, 0, 0, ['0']) }]
-    }
-    if (patch === null) {
-      return [{ operator: '>=', version: at(major, minor, 0, zero) }, { operator: '<', version: at(major, minor + 1, 0, ['0']) }]
-    }
-    return [{ operator: '>=', version: at(major, minor, patch, prerelease) }, { operator: '<', version: at(major, minor + 1, 0, ['0']) }]
-  }
-
-  if (minor === null || patch === null) {
-    // x-range forms: `1`, `1.2`, `1.x`, `1.2.x`
-    const xm = minor === null
-    const lower = at(major, xm ? 0 : minor, 0, zero)
-    if (operator === '>') {
-      return [{ operator: '>=', version: xm ? at(major + 1, 0, 0, zero) : at(major, minor + 1, 0, zero) }]
-    }
-    if (operator === '<=') {
-      return [{ operator: '<', version: xm ? at(major + 1, 0, 0, ['0']) : at(major, minor + 1, 0, ['0']) }]
-    }
-    if (operator === '<') {
-      return [{ operator: '<', version: at(major, xm ? 0 : minor, 0, ['0']) }]
-    }
-    if (operator === '>=') {
-      return [{ operator: '>=', version: lower }]
-    }
-    const upper = xm ? at(major + 1, 0, 0, ['0']) : at(major, minor + 1, 0, ['0'])
-    return [{ operator: '>=', version: lower }, { operator: '<', version: upper }]
-  }
-
-  const exact = at(major, minor, patch, prerelease)
-  switch (operator) {
-    case '>': return [{ operator: '>', version: exact }]
-    case '>=': return [{ operator: '>=', version: exact }]
-    case '<': return [{ operator: '<', version: exact }]
-    case '<=': return [{ operator: '<=', version: exact }]
-    default: return [{ operator: '=', version: exact }]
-  }
-}
-
-function expandHyphenRange (from, to, includePrerelease) {
-  const parse = (text) => {
-    const match = COMPARATOR_PATTERN.exec(text)
-    if (match === null) throw new Error(`invalid range boundary: ${text}`)
-    return {
-      major: isWildcard(match[2]) ? null : Number(match[2]),
-      minor: isWildcard(match[3]) ? null : Number(match[3]),
-      patch: isWildcard(match[4]) ? null : Number(match[4]),
-      prerelease: match[5] === undefined ? [] : match[5].split('.'),
-    }
-  }
-  const start = parse(from)
-  const end = parse(to)
-  const zero = includePrerelease ? ['0'] : []
-  const comparators = []
-  if (start.major !== null) {
-    if (start.minor === null) comparators.push({ operator: '>=', version: at(start.major, 0, 0, zero) })
-    else if (start.patch === null) comparators.push({ operator: '>=', version: at(start.major, start.minor, 0, zero) })
-    else comparators.push({ operator: '>=', version: at(start.major, start.minor, start.patch, start.prerelease.length > 0 ? start.prerelease : zero) })
-  }
-  if (end.major !== null) {
-    if (end.minor === null) comparators.push({ operator: '<', version: at(end.major + 1, 0, 0, ['0']) })
-    else if (end.patch === null) comparators.push({ operator: '<', version: at(end.major, end.minor + 1, 0, ['0']) })
-    else if (end.prerelease.length > 0) comparators.push({ operator: '<=', version: at(end.major, end.minor, end.patch, end.prerelease) })
-    else if (includePrerelease) comparators.push({ operator: '<', version: at(end.major, end.minor, end.patch + 1, ['0']) })
-    else comparators.push({ operator: '<=', version: at(end.major, end.minor, end.patch) })
-  }
-  return comparators
-}
-
-function parseRange (raw, includePrerelease = false) {
-  const text = String(raw).trim()
-  if (text === '') throw new Error('empty semver range')
-  const alternatives = text.split('||').map((part) => {
-    const trimmed = part.trim()
-    if (trimmed === '' || trimmed === '*') return [anyComparator()]
-    const hyphen = /^(.+?)\s+-\s+(.+)$/.exec(trimmed)
-    if (hyphen !== null) return expandHyphenRange(hyphen[1], hyphen[2], includePrerelease)
-    const comparators = []
-    for (const token of trimmed.split(/\s+/)) {
-      if (token === '*' || token === 'x' || token === 'X') continue
-      comparators.push(...expandComparator(token, includePrerelease))
-    }
-    return comparators.length === 0 ? [anyComparator()] : comparators
-  })
-  return alternatives
-}
-
-function testComparator (candidate, comparator) {
-  if (comparator.operator === 'any') return true
-  const order = compareVersions(candidate, comparator.version)
-  switch (comparator.operator) {
-    case '>': return order > 0
-    case '>=': return order >= 0
-    case '<': return order < 0
-    case '<=': return order <= 0
-    case '=': return order === 0
-    default: throw new Error(`unsupported comparator operator: ${comparator.operator}`)
-  }
-}
-
-function satisfies (rawVersion, rawRange, options = {}) {
-  const includePrerelease = options.includePrerelease === true
-  const candidate = parseVersion(rawVersion)
-  const alternatives = parseRange(rawRange, includePrerelease)
-  for (const comparators of alternatives) {
-    if (comparators.length === 0) return true
-    if (!comparators.every((comparator) => testComparator(candidate, comparator))) continue
-    if (candidate.prerelease.length > 0 && !includePrerelease) {
-      // semver only lets a prerelease satisfy a set that mentions a
-      // prerelease of the same [major, minor, patch] tuple.
-      const allowed = comparators.some((comparator) =>
-        comparator.version.prerelease.length > 0 &&
-        comparator.version.major === candidate.major &&
-        comparator.version.minor === candidate.minor &&
-        comparator.version.patch === candidate.patch)
-      if (!allowed) continue
-    }
-    return true
-  }
-  return false
-}
-// ── semver-lite:end ──
+// ── semver floor:end ──
 
 // Minimal XML well-formedness scan: enough to reject a malformed icon without
 // adding a parser dependency.
@@ -357,20 +206,22 @@ test('the packed file list keeps every exported display asset', () => {
   assert.ok(files.includes('cordis.patch.yml'))
 })
 
-test('engines.dsh declares a valid semver range for the supported DSH versions', () => {
+test('engines.dsh declares the supported DSH versions', () => {
   const range = PACKAGE.engines?.dsh
   assert.equal(typeof range, 'string')
-  assert.ok(range.trim().length > 0)
-  assert.doesNotThrow(() => parseRange(range), 'engines.dsh must be a parseable semver range')
-  assert.match(range, /^>=0\.1\.7/, 'the plugin claims support from DSH 0.1.7 onwards')
-  assert.equal(satisfies('0.2.1-rc.5', range, { includePrerelease: true }), true,
+  // Pinned literally: the range is the Host's install-time gate, so a
+  // silent change to it must be a deliberate, visible edit.
+  assert.equal(range, '>=0.1.7-0',
+    'engines.dsh must stay ">=0.1.7-0" — the -0 floor keeps 0.1.7 prereleases inside the range')
+  assert.equal(satisfiesFloor('0.2.1-rc.5', range), true,
     'the current DSH runtime satisfies the range')
-  assert.equal(satisfies('0.2.0-rc.2', range, { includePrerelease: true }), true)
-  assert.equal(satisfies('0.1.7-alpha.1', range, { includePrerelease: true }), true,
+  assert.equal(satisfiesFloor('0.2.0-rc.2', range), true)
+  assert.equal(satisfiesFloor('0.1.7-rc.1', range), true)
+  assert.equal(satisfiesFloor('0.1.7-alpha.1', range), true,
     'prereleases of the lowest supported version stay inside the range')
-  assert.equal(satisfies('0.1.7', range, { includePrerelease: true }), true)
-  assert.equal(satisfies('0.1.6-alpha.1', range, { includePrerelease: true }), false)
-  assert.equal(satisfies('0.1.6', range, { includePrerelease: true }), false)
+  assert.equal(satisfiesFloor('0.1.7', range), true)
+  assert.equal(satisfiesFloor('0.1.6-alpha.1', range), false)
+  assert.equal(satisfiesFloor('0.1.6', range), false)
 })
 
 test('engines.node keeps the runtime floor and the dependency set stays minimal', () => {

@@ -35,24 +35,48 @@ test('inject declares ONLY the services the plugin cannot work without', () => {
 })
 
 test('apply() registers the tool surface even when skills/commands are absent', async () => {
-  // The absence of an optional service must be REPORTED, not silent: the
-  // plugin still registers its providers and tools, and logs the gap.
+  // An optional service that is missing must NOT stop the plugin, and the
+  // gap must be visible in the log (not silent).
   const ctx = makeStubCtx({ withoutSkills: true, withoutCommands: true })
-  const warnings = []
+  const lines = []
   // The plugin's logger facade reads `ctx.logger` (a property, not a
   // service), so the stub logger is installed there.
   ctx.logger = {
-    warn: (m, meta, msg) => warnings.push(String(msg || m)),
-    info() {}, error() {}, debug() {},
+    warn: (m, meta, msg) => lines.push(String(msg || m)),
+    info: (m, meta, msg) => lines.push(String(msg || m)),
+    error: (m, meta, msg) => lines.push(String(msg || m)),
+    debug() {},
   }
   await apply(ctx, {})
   assert.equal(ctx.state.searchProviders.size, 1)
   assert.ok(ctx.state.toolsRegistered.has('web_search_ex'))
   assert.equal(ctx.state.commandsRegistered.size, 0)
-  assert.ok(warnings.some((w) => /skills service is not mounted/.test(w)),
+  assert.ok(lines.some((w) => /skills service is not mounted/.test(w)),
     'a missing skills service must be logged, not silent')
-  assert.ok(warnings.some((w) => /commands service is not mounted/.test(w)),
+  assert.ok(lines.some((w) => /commands service is not mounted/.test(w)),
     'a missing commands service must be logged, not silent')
+})
+
+test('apply() registers the skills/commands through an optional inject child', async () => {
+  // The optional services must be bound with ctx.inject, so a service that
+  // mounts LATER still gets its registrations — a one-shot lookup would
+  // lose them permanently.
+  const ctx = makeStubCtx({})
+  const state = ctx.state
+  const injected = []
+  ctx.inject = (deps, cb) => {
+    injected.push(deps)
+    const parent = ctx
+    const child = { get: (k) => parent.get(k), effect: (fn) => parent.effect(fn) }
+    for (const d of deps) child[d] = parent.get(d)
+    if (deps.every((d) => child.get(d))) cb(child)
+    return { dispose() {} }
+  }
+  await apply(ctx, {})
+  assert.deepEqual(injected, [['skills'], ['commands']])
+  assert.ok(state.skillsRegistered.has('web-access'))
+  assert.ok(state.skillsRegistered.has('web-access-doctor'))
+  assert.ok(state.commandsRegistered.has('webdoctor'))
 })
 
 test('apply() registers web-access-chain-search + web-access-chain-fetch', async () => {
@@ -217,6 +241,19 @@ function makeStubCtx(opts = {}) {
       return () => {
         try { if (typeof dispose === 'function') dispose() } catch { /* ignore */ }
       }
+    },
+    // Optional-dependency child fiber: runs the callback when the declared
+    // services are available, exactly like cordis' own ctx.inject.
+    inject(deps, cb) {
+      const parent = this
+      const child = {
+        get: (key) => parent.get(key),
+        effect: (fn) => parent.effect(fn),
+      }
+      // A cordis context resolves a service both by property and by get().
+      for (const d of deps) child[d] = parent.get(d)
+      if (deps.every((d) => child.get(d))) cb(child)
+      return { dispose() {} }
     },
   }
 }

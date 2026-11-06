@@ -3,13 +3,15 @@
 # (1) Pin ctx.web.searchProvider to 'web-access-chain-search' and
 #     ctx.web.fetchProvider to 'web-access-chain-fetch' so the HOST's own
 #     `web_search` / `web_fetch` tools run through this bundle's multi-
-#     provider chain. The namespaced ids are a defensive choice (SPEC
+#     provider chain. (The shipped `web-fetch-http` provider stays
+#     registered under the id `http`; it is simply never selected, because
+#     the fetch provider is pinned.) The namespaced ids are a defensive choice (SPEC
 #     §II.9): even if a user forgets to uninstall v1.0, no duplicate
 #     provider is registered because the ids differ. Standard upgrade is
 #     uninstall v1.0 → install the current release.
 #
-# (2) Disable the two shipped DeepSeek search rows, so the ONLY search and
-#     fetch providers registered in the composition are this bundle's:
+# (2) Disable the two shipped DeepSeek search rows, so the only search and
+#     fetch providers this bundle's chain can land on are its own:
 #       - `web-search-deepseek` → the Messages-based `deepseek-official`
 #         provider. Disabling it also removes the Host's native "Web
 #         search" settings page, which only exists while that namespace is
@@ -21,6 +23,9 @@
 #         registered; with (1) in place they were never selected, but an
 #         unpinned deployment would have hit WEB_PROVIDER_AMBIGUOUS
 #         instead of deterministically using this chain.
+#         This row does not exist in the 0.1.7 / 0.2.0 base: the host warns
+#         about an unknown patch target and skips it, so older hosts keep
+#         working (with one startup warning).
 #
 # (3) We deliberately do NOT touch the `tool-web` row any more. Since DSH
 #     0.2.1 the Host composes the model-facing web tools PER AGENT PRESET

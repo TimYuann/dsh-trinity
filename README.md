@@ -116,7 +116,8 @@ dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.3.tg
   `web-access-chain-fetch`，使 preset 组装的原生 `web_search` / `web_fetch`
   走插件路由；
 - 禁用会与插件 Search provider 产生歧义的 `web-search-deepseek` bundle，以及
-  DSH 0.2.1 新增的 `web-deepseek-api` bundle；
+  DSH 0.2.1 新增的 `web-deepseek-api` bundle（该行在 `0.1.7` / `0.2.0` 的 base
+  里不存在，宿主对未知 patch 目标只 warn 并跳过，不会导致安装失败）；
 - **不再**全局启用宿主 `tool-web` 行：DSH 0.2.1 起原生 Web 工具由 agent preset
   组装（见「web 工具的宿主组合模型变化（DSH 0.2.1+）」一节）。
 
@@ -409,8 +410,12 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
 `0.2.2-alpha.2`。本节只记录**实际做过**的核对：
 
 **静态契约核对** —— 对插件依赖的宿主服务逐条比对签名：`web`、`tools`、
-`systemPrompt`、`settings`、`credentials`、`agents`、`skills`、`commands`、
-`llm` 九个服务在 `0.2.1-rc.5` 上与插件的调用形状兼容，未发现 API 硬断裂。
+`systemPrompt` 三个**必需**服务（插件的 `inject` 只声明这三个），以及按需取用的
+`settings`、`credentials`、`agents`、`skills`、`commands`、`llm`，在 `0.2.1-rc.5`
+上与插件的调用形状兼容，未发现 API 硬断裂。其中 `settings` 在 `0.2.1` 上**没有**
+`register` API（只有 `configure` / `describe` / `update` / `replace` / `mutate`），
+插件里的 legacy 分支因此只在 `≤0.1.6` 的宿主上可达——自 `engines.dsh >= 0.1.7-0`
+起在新安装中不会执行。
 
 **活体检查** —— 在真实宿主上确认：插件行 `include:web-access-chain` 的 Config
 schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_content`、
@@ -434,7 +439,7 @@ schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_co
 DSH `0.2.1` 起，原生 `web_search` / `web_fetch` 不再由宿主行 `tool-web` 统一开关，
 而是由 **agent preset** 组装：
 
-- `standard` / `ptc` preset 提供原生 Web 工具；
+- `standard` / `ptc` / `cordis` preset 提供原生 Web 工具；
 - `minimal` preset 不提供；
 - 宿主行 `tool-web` 保持禁用。
 
@@ -443,7 +448,7 @@ DSH `0.2.1` 起，原生 `web_search` / `web_fetch` 不再由宿主行 `tool-web
 路由：Search → `web-access-chain-search`，Fetch → `web-access-chain-fetch`。
 
 实践含义：会话所用 agent preset 需要包含 Web 工具，模型才会看到原生
-`web_search` / `web_fetch`（`standard` / `ptc` 满足，`minimal` 不满足）。插件自己
+`web_search` / `web_fetch`（`standard` / `ptc` / `cordis` 满足，`minimal` 不满足）。插件自己
 注册的 `web_search_ex` / `search_content` / `source_check` / `web_doctor` 走
 `ctx.tools` 注册通道，与 `tool-web` 行无关。
 
