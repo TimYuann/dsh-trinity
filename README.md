@@ -68,7 +68,7 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
-`2.4.3` 面向 DSH `0.1.7` 及更新版本：本机实测运行时为 DSH `0.2.1-rc.5`，官方最新
+`2.4.4` 面向 DSH `0.1.7` 及更新版本：本机实测运行时为 DSH `0.2.1-rc.5`，官方最新
 已发布 tag 为 `0.2.2-alpha.2`。插件在 manifest 中声明 `engines.dsh: ">=0.1.7-0"`
 版本闸门——`0.1.7` 线及更新版本可安装（含 `0.1.7-alpha.1` / `0.1.7-rc.1` 这类
 预发布标签，`-0` 后缀正是为此保留），更旧的宿主在**安装期**即被拒绝：
@@ -78,7 +78,7 @@ dsh plugin --profile web add dsh-trinity
 ```
 
 也可以在 DSH Web 的 **Plugins → 添加插件** 里直接填写 `dsh-trinity`（或
-`dsh-trinity@2.4.3`、本仓库的 GitHub 地址、本地目录路径）。
+`dsh-trinity@2.4.4`、本仓库的 GitHub 地址、本地目录路径）。
 
 首次安装建议先落在独立 Profile，确认无误后再装到长期使用的 `web`：
 
@@ -95,7 +95,7 @@ dsh --profile dev-trinity --no-open --port 4601
 
 ```bash
 pnpm pack --pack-destination /tmp/dsh-trinity-build
-dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.3.tgz
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.4.tgz
 ```
 
 > 新版本进入 Profile 后，用 `dsh --profile <name> --dump-config` 核对 effective
@@ -430,6 +430,15 @@ schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_co
 
 本轮**未**验证的项：真实 provider 的端到端调用、浏览器端渲染。因此本节不对这两项
 作任何结论；`0.1.7-rc.1` / `0.2.0-rc.2` 时期的端到端记录见上一节。
+
+### 2.4.4 补丁：web_doctor 的输出 schema 漏声明一个字段
+
+`2.4.3` 把 X 适配器一并带了进来，它在 doctor 报告里多一个 `optIn` 标志；而
+`web_doctor` 的输出 schema 对 adapter 行声明了 `additionalProperties: false`，
+却没写 `optIn`——宿主按 schema 校验工具结果，于是**整个 `web_doctor` 结果被拒绝**
+（`"value.adapters[5].optIn" is not a declared property`）。`2.4.4` 补上这个字段，
+并新增一条契约测试：doctor 的报告必须满足工具自己声明的输出 schema（此前没有任何
+测试覆盖这条边界）。
 
 插件 manifest 新增 `engines.dsh: ">=0.1.7-0"` 版本闸门：低于 `0.1.7` 线的宿主在
 安装期即被拒绝，不会进入运行期。
