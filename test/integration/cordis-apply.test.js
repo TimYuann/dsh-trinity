@@ -21,8 +21,38 @@ test('plugin metadata is correct (v2.0 namespaced)', () => {
   assert.ok(inject.includes('web'))
   assert.ok(inject.includes('tools'))
   assert.ok(inject.includes('systemPrompt'))
-  assert.ok(inject.includes('settings'))
-  assert.ok(inject.includes('credentials'))
+})
+
+test('inject declares ONLY the services the plugin cannot work without', () => {
+  // `settings`, `credentials`, `agents`, `skills` and `commands` are
+  // OPTIONAL: the code degrades when they are missing. Declaring them as
+  // hard dependencies made the whole plugin fail to start — silently, with
+  // no log — whenever one of them was absent.
+  for (const optional of ['settings', 'credentials', 'agents']) {
+    assert.equal(inject.includes(optional), false,
+      `${optional} is optional and must not be a hard dependency`)
+  }
+})
+
+test('apply() registers the tool surface even when skills/commands are absent', async () => {
+  // The absence of an optional service must be REPORTED, not silent: the
+  // plugin still registers its providers and tools, and logs the gap.
+  const ctx = makeStubCtx({ withoutSkills: true, withoutCommands: true })
+  const warnings = []
+  // The plugin's logger facade reads `ctx.logger` (a property, not a
+  // service), so the stub logger is installed there.
+  ctx.logger = {
+    warn: (m, meta, msg) => warnings.push(String(msg || m)),
+    info() {}, error() {}, debug() {},
+  }
+  await apply(ctx, {})
+  assert.equal(ctx.state.searchProviders.size, 1)
+  assert.ok(ctx.state.toolsRegistered.has('web_search_ex'))
+  assert.equal(ctx.state.commandsRegistered.size, 0)
+  assert.ok(warnings.some((w) => /skills service is not mounted/.test(w)),
+    'a missing skills service must be logged, not silent')
+  assert.ok(warnings.some((w) => /commands service is not mounted/.test(w)),
+    'a missing commands service must be logged, not silent')
 })
 
 test('apply() registers web-access-chain-search + web-access-chain-fetch', async () => {
@@ -163,13 +193,18 @@ function makeStubCtx(opts = {}) {
       return () => { state.systemPromptSections-- }
     },
   }
+  state.web = web
+  state.tools = tools
+  state.settings = settings
+  state.credentials = credentials
+  state.systemPrompt = systemPrompt
   return {
     state,
     get(key) {
       if (key === 'web') return web
       if (key === 'tools') return tools
-      if (key === 'commands') return commands
-      if (key === 'skills') return skills
+      if (key === 'commands') return opts.withoutCommands ? null : commands
+      if (key === 'skills') return opts.withoutSkills ? null : skills
       if (key === 'settings') return settings
       if (key === 'credentials') return credentials
       if (key === 'systemPrompt') return systemPrompt

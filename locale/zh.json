@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Trinity",
+    "description": "将 DeepSeek Harness 原生的 web_search 与 web_fetch 路由到多 Provider 搜索、网页抓取与来源核验能力。"
+  }
+}

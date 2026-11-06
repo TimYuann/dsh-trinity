@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Trinity",
+    "description": "Routes DeepSeek Harness web_search and web_fetch to multi-provider web search, page fetching, and source verification."
+  }
+}

@@ -7,11 +7,13 @@ import { put, get, readEntryContent, list, stats, purge } from '../lib/cache/ind
 import { HARD_CHAR_CAP, readContent } from '../lib/cache/content-find.js'
 import { makeCacheRef, decodeCacheRefTime } from '../lib/cache/cacheRef.js'
 
-// Module-level shared in-memory storage. The cache layer writes to
-// ctx.storage.form('default') — this Map stands in for that backend so
-// put() / get() actually round-trip across separate stubs. Without a
-// shared store, each makeStubCtx() would have its own Map and cross-ctx
-// reads would return null.
+// Module-level shared in-memory storage. On DSH 0.2.1 no host mounts a
+// storage form named `default` (the plugin probes the forms a host
+// actually mounts — see lib/cache/storage.js), so cached payloads live
+// INLINE in the process-local entry map. This stub keeps a shared form
+// around for the storage-backed path, so put() / get() round-trip across
+// separate stubs. Without a shared store, each makeStubCtx() would have
+// its own Map and cross-ctx reads would return null.
 const sharedFormStore = new Map()
 const sharedFormStub = {
   async put(key, value) { sharedFormStore.set(key, value); return { ok: true } },

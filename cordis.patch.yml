@@ -1,26 +1,38 @@
 # DSH Trinity bundle patch.
 #
-# (1) Pin ctx.web.searchProvider to 'web-access-chain-search' so model calls
-#     to web_search always land on the new namespaced provider. The namespaced
-#     ID is a defensive choice (SPEC §II.9): even if a user forgets to
-#     uninstall v1.0, no duplicate provider is registered because the IDs
-#     differ. Standard upgrade is uninstall v1.0 → install v2.2.
-# (2) Pin ctx.web.fetchProvider to 'web-access-chain-fetch'.
-# (3) Disable the DSH default web-search-deepseek bundle so it does not
-#     register a second usable candidate that would make web seam ambiguous.
-# (4) Insert a host row that points at this bundle's own package, so the
-#     loader imports lib/index.js and runs apply(ctx, config), which is the
-#     only place that calls ctx.web.registerSearchProvider +
-#     ctx.web.registerFetchProvider + ctx.tools.register.
-# (5) Alpha 4 + rc.x compatibility: undo dsh-web-app's
-#     `tool-web: disabled: true`. dsh-web-app disables the
-#     whole row in its own patch layer on every rc.1/rc.2
-#     install path we have observed (re-verified against
-#     dsh-web-app@0.1.7-rc.1 cordis.patch.yml L534 on
-#     2026-09-25; first verified against 0.1.5-rc.2 on
-#     2026-09-11), so this row is NOT a no-op on rc.x — it
-#     actively re-enables tool-web. The line is also correct
-#     on alpha.4. Keep this row.
+# (1) Pin ctx.web.searchProvider to 'web-access-chain-search' and
+#     ctx.web.fetchProvider to 'web-access-chain-fetch' so the HOST's own
+#     `web_search` / `web_fetch` tools run through this bundle's multi-
+#     provider chain. The namespaced ids are a defensive choice (SPEC
+#     §II.9): even if a user forgets to uninstall v1.0, no duplicate
+#     provider is registered because the ids differ. Standard upgrade is
+#     uninstall v1.0 → install the current release.
+#
+# (2) Disable the two shipped DeepSeek search rows, so the ONLY search and
+#     fetch providers registered in the composition are this bundle's:
+#       - `web-search-deepseek` → the Messages-based `deepseek-official`
+#         provider. Disabling it also removes the Host's native "Web
+#         search" settings page, which only exists while that namespace is
+#         served — so the user cannot switch the Host's provider selection
+#         away from this bundle behind its back.
+#       - `web-deepseek-api` → the `deepseek-search-api` /
+#         `deepseek-fetch-api` providers (new in DSH 0.2.1). It was NOT
+#         disabled before 2.4.3, which left two unused candidates
+#         registered; with (1) in place they were never selected, but an
+#         unpinned deployment would have hit WEB_PROVIDER_AMBIGUOUS
+#         instead of deterministically using this chain.
+#
+# (3) We deliberately do NOT touch the `tool-web` row any more. Since DSH
+#     0.2.1 the Host composes the model-facing web tools PER AGENT PRESET
+#     (`dsh-web-app/presets/{standard,ptc}.patch.yml` insert `tool-web`;
+#     `minimal` does not) and keeps the Host-level row disabled. Older
+#     releases of this bundle overrode that row to `disabled: false`,
+#     which (a) handed the web tools to presets that intentionally exclude
+#     them and (b) only worked while this bundle happened to be layered
+#     AFTER `dsh-web-app` — a silent no-op after any reorder. Leaving the
+#     row alone keeps the Host's own composition model intact: the
+#     standard/ptc presets still expose `web_search` / `web_fetch`, and
+#     those tools reach this bundle through the `ctx.web` pinning above.
 #
 # v2.2: credential refs are DSH env-name refs (EXA_API_KEY / …) — manage
 # with `/webdoctor-keys set <provider> <key>`; settings namespace is
@@ -33,8 +45,8 @@
 - id: web-search-deepseek
   disabled: true
 
-- id: tool-web
-  disabled: false
+- id: web-deepseek-api
+  disabled: true
 
 - insert:
   - id: web-access-chain

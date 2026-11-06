@@ -68,14 +68,17 @@ GitHub PR/Issue、视频提取和 PDF 提取属于可选工具，默认关闭；
 
 ### 安装到 DSH Profile
 
-`2.4.1` 面向 DSH `0.1.7-alpha.1` 及更新版本（含最新发布的 `0.2.0-rc.2`）：
+`2.4.3` 面向 DSH `0.1.7` 及更新版本：本机实测运行时为 DSH `0.2.1-rc.5`，官方最新
+已发布 tag 为 `0.2.2-alpha.2`。插件在 manifest 中声明 `engines.dsh: ">=0.1.7-0"`
+版本闸门——`0.1.7` 线及更新版本可安装（含 `0.1.7-alpha.1` / `0.1.7-rc.1` 这类
+预发布标签，`-0` 后缀正是为此保留），更旧的宿主在**安装期**即被拒绝：
 
 ```bash
 dsh plugin --profile web add dsh-trinity
 ```
 
 也可以在 DSH Web 的 **Plugins → 添加插件** 里直接填写 `dsh-trinity`（或
-`dsh-trinity@2.4.1`、本仓库的 GitHub 地址、本地目录路径）。
+`dsh-trinity@2.4.3`、本仓库的 GitHub 地址、本地目录路径）。
 
 首次安装建议先落在独立 Profile，确认无误后再装到长期使用的 `web`：
 
@@ -92,7 +95,7 @@ dsh --profile dev-trinity --no-open --port 4601
 
 ```bash
 pnpm pack --pack-destination /tmp/dsh-trinity-build
-dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.1.tgz
+dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.3.tgz
 ```
 
 > 新版本进入 Profile 后，用 `dsh --profile <name> --dump-config` 核对 effective
@@ -109,10 +112,13 @@ dsh plugin --profile dev-trinity add /tmp/dsh-trinity-build/dsh-trinity-2.4.1.tg
 
 安装后，DSH Trinity 会在该 Profile 中：
 
-- 保留原生 `web_search` / `web_fetch` 工具；
-- 将 Search/FETCH provider 分别指定为 `web-access-chain-search` 与 `web-access-chain-fetch`；
-- 禁用会与插件 Search provider 产生歧义的 `web-search-deepseek` bundle；
-- 显式恢复 `dsh-web-app` 默认禁用的 `tool-web`，使模型侧 Web 工具可用。
+- 将宿主 Search / FETCH provider 分别指定为 `web-access-chain-search` 与
+  `web-access-chain-fetch`，使 preset 组装的原生 `web_search` / `web_fetch`
+  走插件路由；
+- 禁用会与插件 Search provider 产生歧义的 `web-search-deepseek` bundle，以及
+  DSH 0.2.1 新增的 `web-deepseek-api` bundle；
+- **不再**全局启用宿主 `tool-web` 行：DSH 0.2.1 起原生 Web 工具由 agent preset
+  组装（见「web 工具的宿主组合模型变化（DSH 0.2.1+）」一节）。
 
 > 推荐先在独立测试 Profile 验证，再安装到长期使用的 `web` Profile；不要用
 > 测试 Profile 覆盖已有 `dev` / `web` 的配置或历史会话。
@@ -171,8 +177,16 @@ web-access-chain → Configure**，即可进入插件控制中心：
 ### Key 解析优先级
 
 ```text
-进程环境变量 > DSH credential store > DSH .env 文件
+DSH credential store > 启动环境变量 > DSH .env 文件
 ```
+
+优先级由宿主实现决定（DSH `0.2.1-rc.5` 的 `dsh-credentials-local`）：**已保存的
+credential store 排在最前**，其次是 DSH 启动时快照的进程环境变量，最后才是 DSH 的
+`.env` 文件（项目 `.env` 优先于 harness home 的 `.env`）。
+
+这意味着**保存会遮蔽环境变量**：一旦某个 ref 在 store 里有条目，同名的环境变量就
+不再生效。要让环境变量重新起作用，必须先删除 store 里的条目
+（例如 `/webdoctor-keys clear <provider>`），再在新的 DSH 启动环境中带上该变量。
 
 因此，面向可重复部署的 Profile，建议通过 Web UI 设置页或 `/webdoctor-keys set` 写入 DSH credential store，而不是依赖其他 Agent skill 注入的环境变量。
 
@@ -277,10 +291,10 @@ agent loop 请求（例如 `opencode-go` 对插件调用返回 `400 MissingSessi
 `assessmentSource: "heuristic"` 与 `assessmentError`，而不是让启发式结论冒充模型结论。
 同样的原因会写进宿主日志（一行 `dsh-trinity llm-call failed`）。
 
-## DSH 0.1.7 / 0.2.0 兼容性
+## DSH 0.1.7 / 0.2.0 兼容性（历史实测）
 
 `2.4.1` 已在独立 `dev-trinity` Profile 上对 **DSH `0.1.7-rc.1`** 与
-**DSH `0.2.0-rc.2`**（当前 npm `latest`，即桌面 App 版本）双版本实测：
+**DSH `0.2.0-rc.2`**（当时的 npm `latest`，即桌面 App 版本）双版本实测：
 
 - 412 项测试和全部静态 gate 通过；
 - 冷启动 `web-access-chain.init { phase: 'done', settings: 21 }`，无告警；
@@ -351,7 +365,8 @@ DSH `0.1.7-alpha.1` 的宿主进程会在返回 `status=200` 的同时**丢掉�
 - 未配置 key 的 Provider 会显示“待配置”，属预期状态。
 
 旧版 alpha.4 / 0.1.5 验证记录保留在历史 audit 文档中。宿主已于 2026-09-25 升级到
-`0.1.7-rc.1` 并完成复验（见下节），当前安装与兼容结论以 rc.1 结果为准。
+`0.1.7-rc.1` 并完成复验（见下节）；本机当前实测运行时为 DSH `0.2.1-rc.5`，
+最新兼容结论见「DSH 0.2.1-rc.5 符合性复核（2026-11）」一节。
 
 ### 0.1.7-rc.1 升级审计（2026-09-25）
 
@@ -388,6 +403,50 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
   （8 条真实结果，mmx 回退链路）；
 - 395 项测试与 14 项 patch 测试复跑通过。
 
+## DSH 0.2.1-rc.5 符合性复核（2026-11）
+
+本轮复核的实测运行时是 DSH `0.2.1-rc.5`（本机安装版本），官方最新已发布 tag 为
+`0.2.2-alpha.2`。本节只记录**实际做过**的核对：
+
+**静态契约核对** —— 对插件依赖的宿主服务逐条比对签名：`web`、`tools`、
+`systemPrompt`、`settings`、`credentials`、`agents`、`skills`、`commands`、
+`llm` 九个服务在 `0.2.1-rc.5` 上与插件的调用形状兼容，未发现 API 硬断裂。
+
+**活体检查** —— 在真实宿主上确认：插件行 `include:web-access-chain` 的 Config
+schema 处于 `schema` 状态；4 个常驻工具（`web_search_ex`、`search_content`、
+`source_check`、`web_doctor`）与 2 个 Skill（`web-access`、`web-access-doctor`）
+均已注册；`web_doctor` 的被动诊断（`activeProbe: false`）正常返回。
+
+**凭据优先级文案修正** —— 宿主 `dsh-credentials-local` 的 `resolve(ref)` 是 **store
+优先**（`source: "file"` → `"env"` → `.env`）。插件此前的注释与 `/webdoctor-keys`
+帮助文案写反成「环境变量优先」，本版已按宿主实现更正；插件的**取值行为始终只走
+`ctx.credentials.resolve()`，未发生改变**（详见
+`docs/audit/2026-11-03-host-seam-conformance.md` 的 F3）。
+
+本轮**未**验证的项：真实 provider 的端到端调用、浏览器端渲染。因此本节不对这两项
+作任何结论；`0.1.7-rc.1` / `0.2.0-rc.2` 时期的端到端记录见上一节。
+
+插件 manifest 新增 `engines.dsh: ">=0.1.7-0"` 版本闸门：低于 `0.1.7` 线的宿主在
+安装期即被拒绝，不会进入运行期。
+
+## web 工具的宿主组合模型变化（DSH 0.2.1+）
+
+DSH `0.2.1` 起，原生 `web_search` / `web_fetch` 不再由宿主行 `tool-web` 统一开关，
+而是由 **agent preset** 组装：
+
+- `standard` / `ptc` preset 提供原生 Web 工具；
+- `minimal` preset 不提供；
+- 宿主行 `tool-web` 保持禁用。
+
+因此本插件**不再全局打开** `tool-web` 行（`2.4.0`～`2.4.2` 的 `cordis.patch.yml`
+曾把它改回 `disabled: false`）。原生工具仍然可用，只是走 `ctx.web` 的 provider
+路由：Search → `web-access-chain-search`，Fetch → `web-access-chain-fetch`。
+
+实践含义：会话所用 agent preset 需要包含 Web 工具，模型才会看到原生
+`web_search` / `web_fetch`（`standard` / `ptc` 满足，`minimal` 不满足）。插件自己
+注册的 `web_search_ex` / `search_content` / `source_check` / `web_doctor` 走
+`ctx.tools` 注册通道，与 `tool-web` 行无关。
+
 ## 安全边界
 
 - 拒绝 loopback、私网、链路本地、保留地址与危险重定向。
@@ -399,7 +458,7 @@ agentWorkspace `reports/2026-09-25-dsh-0.1.7rc1-vs-alpha1-upgrade-audit.md`）�
 ## 开发与验证
 
 ```bash
-pnpm test                        # 412 项：单元 + 集成 + 契约 + settings 管道
+pnpm test                        # 单元 + 集成 + 契约 + settings 管道
 pnpm run lint:no-llm-in-providers
 npm pack --dry-run
 ```

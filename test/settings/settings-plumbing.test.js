@@ -185,6 +185,42 @@ test('v2.4.1: registerSettings adopts the resolved Config on a modern host', () 
   assert.equal(isVolatileRef(value), false, 'reads must never leak a volatile ref')
 })
 
+// ── 3b. the retained legacy branch (DSH <= 0.1.6 hosts) ─────────────────
+//
+// The legacy `settings.register(ns, schema, { base })` path is UNREACHABLE
+// on a supported host (engines.dsh >= 0.1.7) but is RETAINED for historical
+// compatibility — see lib/settings/register.js. Its coverage lives HERE, in
+// the one test directory that may still be edited, so a future removal has
+// exactly one place to start.
+test('legacy host: the scope-backed handle is used when settings.register exists', () => {
+  const calls = { registered: [] }
+  const scopeValues = {}
+  const settings = {
+    register(ns, schema, options) {
+      calls.registered.push({ ns, schema, options })
+      return { get: () => scopeValues.value ?? {}, watch: () => () => {} }
+    },
+    get(ns) { return { routing: 'aggregate', cacheMaxEntries: 4 } },
+  }
+  const ctx = { get: (k) => (k === 'settings' ? settings : undefined) }
+
+  const handle = registerSettings(ctx, { base: { routing: 'auto' } })
+  assert.ok(handle)
+  assert.equal(handle.source, 'scope', 'a legacy host gets the host-issued scope')
+  assert.equal(calls.registered.length, 1)
+  assert.equal(calls.registered[0].ns, 'web-access-chain')
+  assert.equal(calls.registered[0].schema, WebAccessChainSchema)
+  assert.deepEqual(calls.registered[0].options, { base: { routing: 'auto' } })
+
+  // An empty scope falls back to `settings.get(ns)`, so unit-test seams
+  // still observe real settings.
+  assert.equal(handle.get().cacheMaxEntries, 4)
+
+  // A non-empty scope wins over the fallback.
+  scopeValues.value = { routing: 'auto', cacheMaxEntries: 8 }
+  assert.equal(handle.get().cacheMaxEntries, 8)
+})
+
 test('v2.4.1: the runtime ref is read-through, so live edits are visible', () => {
   const ref = volatileRef('auto')
   const handle = { source: 'config', get: () => unwrapVolatile({ routing: ref, cacheMaxEntries: 128 }), watch: () => () => {} }

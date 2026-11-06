@@ -52,18 +52,18 @@ test('cordis.patch.yml declares adapter + tool gates (SPEC §II.4)', () => {
 })
 
 test('cordis.patch.yml does NOT route through DeepSeek provider', () => {
-  // The disabled-bundle id "web-search-deepseek" is allowed (the patch
-  // explicitly disables it); but no line should ENABLE it or route
+  // The shipped DeepSeek rows may only appear as DISABLED rows (the patch
+  // switches them off); no line should ENABLE one or route
   // ctx.web.searchProvider / ctx.web.fetchProvider to anything deepseek.
   const lines = PATCH.split('\n')
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     const trimmed = line.trim()
     if (trimmed.startsWith('#')) continue // comment
-    if (/^-\s*id:\s*web-search-deepseek\s*$/.test(trimmed)) {
+    if (/^-\s*id:\s*web-(search-)?deepseek(-api)?\s*$/.test(trimmed)) {
       let next = lines.slice(i + 1).find((l) => l.trim().length > 0 && !l.trim().startsWith('#'))
       if (next && /^disabled:\s*true\s*$/.test(next.trim())) continue
-      assert.fail('web-search-deepseek row must be followed by `disabled: true`')
+      assert.fail(`${trimmed} row must be followed by \`disabled: true\``)
     }
     if (/disabled:\s*true/.test(trimmed)) continue
     if (/searchprovider|fetchprovider/.test(trimmed)) {
@@ -115,34 +115,29 @@ test('cordis.patch.yml does NOT contain legacyImport markers (v2.1 removed legac
     'cordis.patch.yml operational content must not reference the removed legacy-import subsystem')
 })
 
-// Alpha 4: dsh-web-app@0.1.2-alpha.5 ships a `tool-web: disabled: true`
-// override in its own cordis.patch.yml. Without the plugin re-enabling
-// it, any alpha.4 profile that mounts dsh-web-app loses the model-facing
-// web_search / web_fetch tool. The plugin must undo the disable. The
-// alpha.4 base default already supplies `config.fetch: true` (card
-// A4-06), so the plugin must NOT restate it.
+// DSH 0.2.1 (rc.1+): the Host composes the model-facing web tools PER AGENT
+// PRESET — `dsh-web-app/presets/{standard,ptc}.patch.yml` insert a
+// `tool-web` row, `minimal` does not — and keeps the Host-level row
+// disabled. Older releases of this bundle overrode that row with
+// `disabled: false`, which (a) handed the web tools to presets that
+// intentionally exclude them and (b) silently became a no-op whenever
+// this bundle was not layered AFTER `dsh-web-app`.
+//
+// Since 2.4.3 the bundle does NOT touch the `tool-web` row at all: the
+// standard/ptc presets still expose `web_search` / `web_fetch`, and those
+// tools reach this bundle through the pinned `ctx.web` providers.
 
-test('Alpha 4: cordis.patch.yml re-enables tool-web (dsh-web-app disables it)', () => {
-  // The tool-web row must be a single two-line `id: tool-web / disabled: false`
-  // block; no `config:` sub-key, no `config.fetch`, no other fields.
-  const block = PATCH.match(/^- id:\s*tool-web\s*\n([\s\S]*?)(?=^- |\Z)/m)
-  assert.ok(block, 'cordis.patch.yml must contain a `- id: tool-web` block')
-  const body = block[1]
-  // trim leading whitespace per line, drop blanks
-  const lines = body.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
-  assert.deepEqual(lines, ['disabled: false'],
-    `tool-web row must be exactly: disabled: false (got ${JSON.stringify(lines)})`)
+test('DSH 0.2.1: cordis.patch.yml does NOT override the host tool-web row', () => {
+  const block = PATCH.match(/^-\s*id:\s*tool-web\s*$/m)
+  assert.equal(block, null,
+    'the bundle must not touch `tool-web` — the host composes web tools per agent preset')
 })
 
-test('Alpha 4: cordis.patch.yml does NOT restate tool-web.config.fetch (base default already true)', () => {
-  // The plugin must not write `config.fetch: true` on the tool-web row;
-  // dsh-base alpha.4 already supplies it. A duplicate would be harmless
-  // but is rejected to keep the patch minimal and forward-clean.
-  // Scan for any `fetch:` field nested under tool-web; the only place the
-  // plugin writes `fetch:` is in the web row's searchProvider / fetchProvider
-  // pair, which is allowed and unchanged.
-  const toolWebBlock = PATCH.match(/^- id:\s*tool-web\s*\n([\s\S]*?)(?=^- |\Z)/m)
-  assert.ok(toolWebBlock, 'cordis.patch.yml must contain a `- id: tool-web` block')
-  assert.equal(/fetch:/.test(toolWebBlock[1]), false,
-    'tool-web row must not declare `config.fetch: true` — alpha.4 base default covers it')
+test('DSH 0.2.1: cordis.patch.yml disables the shipped web-deepseek-api row', () => {
+  const lines = PATCH.split('\n')
+  const idx = lines.findIndex((l) => /^-\s*id:\s*web-deepseek-api\s*$/.test(l.trim()))
+  assert.ok(idx >= 0, 'cordis.patch.yml must contain a `- id: web-deepseek-api` row')
+  const next = lines.slice(idx + 1).find((l) => l.trim().length > 0 && !l.trim().startsWith('#'))
+  assert.ok(next && /^disabled:\s*true\s*$/.test(next.trim()),
+    'web-deepseek-api row must be followed by `disabled: true`')
 })

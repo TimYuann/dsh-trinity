@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { chainedFetch } from '../../lib/providers/fetch/chained-fetch.js'
+import { fakeHostContext } from '../helpers/fake-subprocess.js'
 import { matchSpecializedAdapter } from '../../lib/adapters/index.js'
 import * as x from '../../lib/adapters/x.js'
 
@@ -106,6 +107,10 @@ function fetchThroughChain(url, settings = {}, policy = POLICY) {
   return chainedFetch({ url }, undefined, {
     ...policy,
     maxBytes: 5 * 1024 * 1024,
+    // The plugin runs external binaries through the HOST subprocess seam
+    // (no node:child_process fallback any more), so the test supplies a
+    // seam that really executes the shim.
+    ctx: fakeHostContext(),
     settings: { adapters: { x: { enabled: true } }, ...settings },
   })
 }
@@ -406,6 +411,9 @@ function degradeCtx(publicFetch) {
     policy: POLICY,
     settings: { adapters: { x: { enabled: true } } },
     publicFetch,
+    // The adapter reaches the external binary through the HOST subprocess
+    // seam; `ctx.ctx` is the plugin context the seam lives on.
+    ctx: fakeHostContext(),
   }
 }
 
@@ -443,6 +451,7 @@ test('x: without a publicFetch callback the backend failure propagates', async (
       () => x.fetch({ url: 'https://x.com/karpathy' }, undefined, {
         policy: POLICY,
         settings: { adapters: { x: { enabled: true } } },
+        ctx: fakeHostContext(),
       }),
       (e) => e && e.code === 'WEB_FETCH_FAILED',
     )

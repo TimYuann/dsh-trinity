@@ -370,38 +370,103 @@ test('P0 #8: sanitizeDataUris omits safe mediatypes above 4 KiB', async () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// P1 #9 — subprocess argv[0] allowlist
+// P1 #9 — subprocess argv[0] allowlist, on the HOST seam (DSH 0.2.1)
 // ─────────────────────────────────────────────────────────────────────
+
+// A fake `ctx.subprocess` service that records the spawn spec and returns
+// a handle shaped like @deepseek-ai/dsh-subprocess 0.2.1-rc.5.
+function fakeSubprocessCtx(options = {}) {
+  const calls = []
+  const ctx = {
+    get(name) {
+      if (name !== 'subprocess') return undefined
+      return {
+        spawn(spec) {
+          calls.push(spec)
+          return options.handle ? options.handle(spec) : fakeHandle()
+        },
+      }
+    },
+  }
+  return { ctx, calls }
+}
+
+function fakeHandle(overrides = {}) {
+  const out = overrides.stdout || ''
+  const err = overrides.stderr || ''
+  return {
+    stdin: undefined,
+    stdout: undefined,
+    stderr: undefined,
+    control: undefined,
+    collected: {
+      stdout: { readFrom: () => ({ text: out, nextOffset: out.length, lossy: false }) },
+      stderr: { readFrom: () => ({ text: err, nextOffset: err.length, lossy: false }) },
+    },
+    done: Promise.resolve({ exitCode: overrides.exitCode === undefined ? 0 : overrides.exitCode, signal: overrides.signal || null }),
+    terminate() { if (overrides.onTerminate) overrides.onTerminate() },
+    waitForExit: async () => true,
+  }
+}
 
 test('P1 #9: runSubprocess rejects non-allowlisted argv[0]', async () => {
   const { runSubprocess } = await import('../lib/util/subprocess.js')
+  const { ctx } = fakeSubprocessCtx()
   await assert.rejects(
-    runSubprocess(undefined, { argv: ['rm', '-rf', '/tmp/none'] }),
+    runSubprocess(ctx, { argv: ['rm', '-rf', '/tmp/none'] }),
     (e) => e.code === 'SECURITY',
   )
 })
 
-test('P1 #9: runSubprocess accepts allowlisted binaries (gh, yt-dlp, ffmpeg, ffprobe, git)', async () => {
+test('P1 #9: runSubprocess accepts allowlisted binaries (gh, yt-dlp, ffmpeg, ffprobe, git, opencli)', async () => {
   const { runSubprocess } = await import('../lib/util/subprocess.js')
-  for (const bin of ['gh', 'yt-dlp', 'ffmpeg', 'ffprobe', 'git']) {
-    // We don't actually run these — we just confirm allowlist acceptance.
-    // The test will reject at OS-level (`ENOENT`) if not installed, but
-    // the SECURITY error must NOT appear.
-    try {
-      await runSubprocess(undefined, { argv: [bin, '--help'], timeoutMs: 100 })
-    } catch (e) {
-      assert.notEqual(e.code, 'SECURITY', `${bin} should be on allowlist`)
-    }
+  for (const bin of ['gh', 'yt-dlp', 'ffmpeg', 'ffprobe', 'git', 'opencli']) {
+    const { ctx, calls } = fakeSubprocessCtx()
+    const result = await runSubprocess(ctx, { argv: [bin, '--help'], timeoutMs: 1000 })
+    assert.equal(result.exitCode, 0)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].argv[0], bin)
   }
 })
 
 test('P1 #9: runSubprocess accepts /usr/bin/yt-dlp style paths (basename check)', async () => {
   const { runSubprocess } = await import('../lib/util/subprocess.js')
-  try {
-    await runSubprocess(undefined, { argv: ['/usr/bin/yt-dlp', '--help'], timeoutMs: 100 })
-  } catch (e) {
-    assert.notEqual(e.code, 'SECURITY')
-  }
+  const { ctx, calls } = fakeSubprocessCtx()
+  await runSubprocess(ctx, { argv: ['/usr/bin/yt-dlp', '--help'], timeoutMs: 1000 })
+  assert.equal(calls[0].argv[0], '/usr/bin/yt-dlp')
+})
+
+test('DSH 0.2.1: the spawn spec matches the SubprocessSpawnSpec contract', async () => {
+  const { runSubprocess } = await import('../lib/util/subprocess.js')
+  const { ctx, calls } = fakeSubprocessCtx()
+  await runSubprocess(ctx, { argv: ['gh', 'api', 'x'], timeoutMs: 1000, maxOutputBytes: 4096 })
+  const spec = calls[0]
+  assert.deepEqual(spec.argv, ['gh', 'api', 'x'])
+  assert.equal(typeof spec.cwd, 'string')
+  assert.ok(spec.cwd.length > 0)
+  assert.equal(spec.stdio.stdin, 'ignore')
+  assert.equal(spec.stdio.stdout.maxBytes, 4096)
+  assert.equal(spec.stdio.stderr.maxBytes, 4096)
+  assert.equal(typeof spec.graceMs, 'number')
+  assert.ok(spec.graceMs > 0)
+  // The seam has no timeout: the caller owns deadlines.
+  assert.equal(spec.timeout, undefined)
+  assert.equal(spec.timeoutMs, undefined)
+})
+
+test('DSH 0.2.1: without the host seam the call fails with a coded error', async () => {
+  const { runSubprocess } = await import('../lib/util/subprocess.js')
+  await assert.rejects(
+    runSubprocess(undefined, { argv: ['gh', '--help'] }),
+    (e) => e.code === 'SUBPROCESS_UNAVAILABLE',
+  )
+})
+
+test('DSH 0.2.1: the fetch context (ctx.ctx) is accepted as the host context', async () => {
+  const { runSubprocess } = await import('../lib/util/subprocess.js')
+  const { ctx, calls } = fakeSubprocessCtx()
+  await runSubprocess({ ctx, policy: { ssrf: {} } }, { argv: ['git', '--help'], timeoutMs: 1000 })
+  assert.equal(calls.length, 1)
 })
 
 // ─────────────────────────────────────────────────────────────────────
@@ -482,26 +547,25 @@ test('P1 #13: chained-fetch blocks redirect to SSRF-blocked target', async () =>
 
 test('P1 #14: runSubprocess resolves with {truncated:true} on timeout, NOT reject', async () => {
   const { runSubprocess } = await import('../lib/util/subprocess.js')
-  // Try to invoke a binary that won't return immediately. `sleep 5`
-  // is not on allowlist; instead, use `yes` (also not on allowlist).
-  // We'll trigger the timeout on an allowlisted binary that exits
-  // quickly. The important behaviour: a resolve, not a reject.
-  // We use timeoutMs: 1 to guarantee timeout regardless of binary speed.
-  const result = await runSubprocess(undefined, {
+  let resolveDone = null
+  const handle = fakeHandle({
+    stdout: 'partial output',
+    onTerminate: () => { if (resolveDone) resolveDone({ exitCode: null, signal: 'SIGTERM' }) },
+  })
+  handle.done = new Promise((resolve) => { resolveDone = resolve })
+  const { ctx } = fakeSubprocessCtx({ handle: () => handle })
+
+  const result = await runSubprocess(ctx, {
     argv: ['git', '--help'],
-    timeoutMs: 1,
+    timeoutMs: 20,
     maxOutputBytes: 1024,
   })
-  // The exact path (resolve with truncated:true vs reject) depends on
-  // whether the seam is available. We accept both:
-  //   - resolve with {truncated: true, exitCode: null, signal: 'SIGTERM'}
-  //   - reject with ETIMEDOUT (legacy behaviour, before P1 #14)
-  // The R3 contract is "no partial output is discarded" — when the
-  // subprocess completes before the timer fires, we expect a normal
-  // result with stdout populated.
-  assert.ok(result || true) // the test passes either way; the contract
-                              // is satisfied for fast-finishing commands.
+  assert.equal(result.truncated, true)
+  assert.equal(result.exitCode, null)
+  assert.equal(result.signal, 'SIGTERM')
+  assert.equal(result.stdout, 'partial output')
 })
+
 
 // ─────────────────────────────────────────────────────────────────────
 // P1 #15 — gemini ADC region configurable
